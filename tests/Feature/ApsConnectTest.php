@@ -1,0 +1,365 @@
+<?php
+
+declare(strict_types=1);
+
+use ApsConnect\ApsConnect\ApsConnect;
+use ApsConnect\ApsConnect\Data\RegistraCredentials;
+use ApsConnect\ApsConnect\Http\RegistraClient;
+use ApsConnect\ApsConnect\Support\ProjectConfigReader;
+use Illuminate\Http\Client\Factory;
+use Illuminate\Support\Facades\Http;
+
+beforeEach(function () {
+    // See ApsConnectServiceProviderTest for why this rebinds to an isolated
+    // temp directory instead of using config('aps-connect.base_url') — that
+    // key no longer exists, on purpose (base url only ever comes from
+    // appstation.conf.json).
+    $this->basePath = sys_get_temp_dir().'/aps-connect-tests-'.uniqid();
+    mkdir($this->basePath, recursive: true);
+    file_put_contents($this->basePath.'/appstation.conf.json', json_encode([
+        'environment' => 'production',
+        'api' => ['baseUrl' => 'https://registra.test/api'],
+    ]));
+
+    config(['aps-connect.api_key' => 'secret-key']);
+
+    app()->singleton(RegistraCredentials::class, fn () => (new ProjectConfigReader($this->basePath))->credentials());
+});
+
+afterEach(function () {
+    foreach (glob($this->basePath.'/*') ?: [] as $file) {
+        unlink($file);
+    }
+
+    rmdir($this->basePath);
+});
+
+it('verifies a licence', function () {
+    Http::fake(['*/licences/verify' => Http::response([
+        'success' => true,
+        'active' => true,
+        'status_active' => true,
+        'not_expired' => true,
+        'reason' => null,
+        'licence_key' => 'LIC-1',
+        'status' => 'active',
+        'expires_at' => '2026-08-15T00:00:00+00:00',
+        'remaining_days' => 30,
+        'modules' => [
+            ['slug' => 'reports', 'status' => 'active', 'active' => true, 'expires_at' => '2026-08-15T00:00:00+00:00', 'remaining_days' => 30, 'reason' => null],
+        ],
+        'message' => 'ok',
+    ])]);
+
+    $status = app(ApsConnect::class)->verifyLicence('LIC-1');
+
+    expect($status->licenceKey)->toBe('LIC-1');
+    expect($status->active)->toBeTrue();
+    expect($status->statusActive)->toBeTrue();
+    expect($status->notExpired)->toBeTrue();
+    expect($status->reason)->toBeNull();
+    expect($status->status)->toBe('active');
+    expect($status->expiresAt->toAtomString())->toBe('2026-08-15T00:00:00+00:00');
+    expect($status->remainingDays)->toBe(30);
+    expect($status->message)->toBe('ok');
+    expect($status->modules)->toHaveCount(1);
+    expect($status->modules[0]->slug)->toBe('reports');
+    expect($status->modules[0]->active)->toBeTrue();
+    expect($status->modules[0]->expiresAt->toAtomString())->toBe('2026-08-15T00:00:00+00:00');
+
+    Http::assertSent(fn ($request) => $request['licence_key'] === 'LIC-1');
+});
+
+it('verifies a module licence', function () {
+    Http::fake(['*/licences/verify-module' => Http::response([
+        'success' => true,
+        'licence_key' => 'LIC-1',
+        'module_slug' => 'reports',
+        'mother' => [
+            'active' => true,
+            'status_active' => true,
+            'not_expired' => true,
+            'reason' => null,
+            'status' => 'active',
+            'expires_at' => '2026-08-15T00:00:00+00:00',
+            'remaining_days' => 30,
+        ],
+        'module' => ['slug' => 'reports', 'status' => 'active', 'active' => true, 'expires_at' => '2026-08-15T00:00:00+00:00', 'remaining_days' => 30, 'reason' => null],
+        'message' => 'ok',
+    ])]);
+
+    $verification = app(ApsConnect::class)->verifyModuleLicence('LIC-1', 'reports');
+
+    expect($verification->licenceKey)->toBe('LIC-1');
+    expect($verification->moduleSlug)->toBe('reports');
+    expect($verification->mother->licenceKey)->toBe('LIC-1');
+    expect($verification->mother->active)->toBeTrue();
+    expect($verification->mother->modules)->toBe([]);
+    expect($verification->module->slug)->toBe('reports');
+    expect($verification->module->active)->toBeTrue();
+    expect($verification->message)->toBe('ok');
+
+    Http::assertSent(fn ($request) => $request['licence_key'] === 'LIC-1' && $request['module_slug'] === 'reports');
+});
+
+it('subscribes a licence with a customer and device', function () {
+    Http::fake(['*/subscribe' => Http::response([
+        'success' => true,
+        'active' => true,
+        'status_active' => true,
+        'not_expired' => true,
+        'reason' => null,
+        'licence_key' => 'LIC-1',
+        'status' => 'active',
+        'expires_at' => '2026-08-15T00:00:00+00:00',
+        'remaining_days' => 30,
+        'modules' => [],
+        'message' => 'ok',
+        'usage_period' => ['value' => 1, 'unit' => 'year', 'label' => 'Année'],
+        'customer' => [
+            'id' => 1, 'firstname' => 'Jane', 'lastname' => 'Doe', 'email' => 'jane@example.com',
+            'status' => 'active', 'phone' => null, 'address' => null, 'software_key' => null,
+        ],
+        'device' => [
+            'id' => 1, 'uuid' => 'dev-1', 'type' => 'desktop', 'name' => 'PC', 'os' => 'Windows',
+            'browser' => 'Chrome', 'last_active_at' => '2026-08-15T00:00:00+00:00',
+        ],
+    ])]);
+
+    $result = app(ApsConnect::class)->subscribe('LIC-1', ['email' => 'jane@example.com'], ['uuid' => 'dev-1']);
+
+    expect($result->licence->licenceKey)->toBe('LIC-1');
+    expect($result->licence->active)->toBeTrue();
+    expect($result->usagePeriod->value)->toBe(1);
+    expect($result->usagePeriod->unit)->toBe('year');
+    expect($result->customer->id)->toBe(1);
+    expect($result->customer->email)->toBe('jane@example.com');
+    expect($result->device->uuid)->toBe('dev-1');
+    expect($result->device->lastActiveAt->toAtomString())->toBe('2026-08-15T00:00:00+00:00');
+
+    Http::assertSent(fn ($request) => $request['licence_key'] === 'LIC-1'
+        && $request['customer']['email'] === 'jane@example.com'
+        && $request['device']['uuid'] === 'dev-1');
+});
+
+it('omits the device field entirely when subscribing without a device', function () {
+    Http::fake(['*/subscribe' => Http::response([
+        'success' => true,
+        'active' => true,
+        'status_active' => true,
+        'not_expired' => true,
+        'reason' => null,
+        'licence_key' => 'LIC-1',
+        'status' => 'active',
+        'expires_at' => null,
+        'remaining_days' => null,
+        'modules' => [],
+        'message' => null,
+        'usage_period' => null,
+        'customer' => ['email' => 'jane@example.com'],
+        'device' => null,
+    ])]);
+
+    app(ApsConnect::class)->subscribe('LIC-1', ['email' => 'jane@example.com']);
+
+    Http::assertSent(fn ($request) => ! array_key_exists('device', $request->data()));
+});
+
+it('issues a trial licence', function () {
+    Http::fake(['*/licences/trial' => Http::response([
+        'success' => true,
+        'message' => 'ok',
+        'licence_key' => 'LIC-TRIAL',
+        'trial_period_days' => 14,
+        'must_activate_before_at' => '2026-08-29T00:00:00+00:00',
+        'usage_period' => ['value' => 1, 'unit' => 'month', 'label' => 'Mois'],
+        'customer' => ['email' => 'trial@example.com'],
+    ])]);
+
+    $trial = app(ApsConnect::class)->issueTrial(['email' => 'trial@example.com']);
+
+    expect($trial->licenceKey)->toBe('LIC-TRIAL');
+    expect($trial->trialPeriodDays)->toBe(14);
+    expect($trial->mustActivateBeforeAt->toAtomString())->toBe('2026-08-29T00:00:00+00:00');
+    expect($trial->usagePeriod->unit)->toBe('month');
+    expect($trial->customerEmail)->toBe('trial@example.com');
+});
+
+it('issues a module trial licence', function () {
+    Http::fake(['*/modules/trial' => Http::response([
+        'success' => true,
+        'message' => 'ok',
+        'module_licence_key' => 'MOD-TRIAL',
+        'module_slug' => 'reports',
+        'trial_period_days' => 14,
+        'usage_period' => ['value' => 1, 'unit' => 'month', 'label' => 'Mois'],
+        'customer' => ['email' => 'trial@example.com'],
+    ])]);
+
+    $trial = app(ApsConnect::class)->issueModuleTrial('reports', ['email' => 'trial@example.com']);
+
+    expect($trial->moduleLicenceKey)->toBe('MOD-TRIAL');
+    expect($trial->moduleSlug)->toBe('reports');
+    expect($trial->trialPeriodDays)->toBe(14);
+    expect($trial->customerEmail)->toBe('trial@example.com');
+
+    Http::assertSent(fn ($request) => $request['module_slug'] === 'reports');
+});
+
+it('verifies a standalone module licence', function () {
+    Http::fake(['*/standalone-module-licences/verify' => Http::response([
+        'success' => true,
+        'module_licence_key' => 'SM-1',
+        'module_slug' => 'reports',
+        'status' => 'pending_attachment',
+        'active' => false,
+        'attached' => false,
+        'mother_licence_key' => null,
+        'reason' => 'pending_attachment',
+        'expires_at' => null,
+        'message' => 'ok',
+    ])]);
+
+    $licence = app(ApsConnect::class)->verifyStandaloneModuleLicence('SM-1');
+
+    expect($licence->moduleLicenceKey)->toBe('SM-1');
+    expect($licence->status)->toBe('pending_attachment');
+    expect($licence->active)->toBeFalse();
+    expect($licence->attached)->toBeFalse();
+    expect($licence->motherLicenceKey)->toBeNull();
+    expect($licence->expiresAt)->toBeNull();
+});
+
+it('activates a standalone module licence', function () {
+    Http::fake(['*/standalone-module-licences/activate' => Http::response([
+        'success' => true,
+        'message' => 'ok',
+        'module_licence_key' => 'SM-1',
+        'status' => 'pending_attachment',
+        'expires_at' => null,
+        'usage_period' => null,
+        'customer' => ['id' => 2, 'email' => 'cust@example.com'],
+        'already' => false,
+    ])]);
+
+    $activation = app(ApsConnect::class)->activateStandaloneModuleLicence('SM-1', ['email' => 'cust@example.com']);
+
+    expect($activation->moduleLicenceKey)->toBe('SM-1');
+    expect($activation->usagePeriod)->toBeNull();
+    expect($activation->customer->id)->toBe(2);
+    expect($activation->customer->email)->toBe('cust@example.com');
+    expect($activation->already)->toBeFalse();
+});
+
+it('attaches a standalone module licence to a mother licence', function () {
+    Http::fake(['*/standalone-module-licences/attach' => Http::response([
+        'success' => true,
+        'message' => 'ok',
+        'mother_licence_key' => 'LIC-1',
+        'modules' => [
+            ['slug' => 'reports', 'status' => 'active', 'active' => true, 'expires_at' => null, 'remaining_days' => null, 'reason' => null],
+        ],
+    ])]);
+
+    $attachment = app(ApsConnect::class)->attachStandaloneModuleLicence('SM-1', 'LIC-1');
+
+    expect($attachment->motherLicenceKey)->toBe('LIC-1');
+    expect($attachment->modules)->toHaveCount(1);
+    expect($attachment->modules[0]->slug)->toBe('reports');
+
+    Http::assertSent(fn ($request) => $request['module_licence_key'] === 'SM-1' && $request['mother_licence_key'] === 'LIC-1');
+});
+
+it('looks up a licence by customer email and device', function () {
+    Http::fake(['*/licences/lookup-by-customer-device' => Http::response([
+        'success' => true,
+        'active' => true,
+        'status_active' => true,
+        'not_expired' => true,
+        'reason' => null,
+        'licence_key' => 'LIC-1',
+        'status' => 'active',
+        'expires_at' => null,
+        'remaining_days' => null,
+        'modules' => [],
+        'message' => 'ok',
+        'usage_period' => null,
+        'customer' => ['email' => 'jane@example.com'],
+        'device' => null,
+    ])]);
+
+    $result = app(ApsConnect::class)->lookupByCustomerDevice('jane@example.com', 'dev-1');
+
+    expect($result->licence->licenceKey)->toBe('LIC-1');
+    expect($result->customer->email)->toBe('jane@example.com');
+
+    Http::assertSent(fn ($request) => $request['email'] === 'jane@example.com' && $request['device_uuid'] === 'dev-1');
+});
+
+it('fetches the connected software identity', function () {
+    Http::fake(['*/software/me' => Http::response([
+        'success' => true,
+        'data' => [
+            'token' => 'tok',
+            'key' => 'KEY',
+            'name' => 'My Software',
+            'slug' => 'my-software',
+            'environment' => 'production',
+            'has_modules' => true,
+            'has_api_key' => true,
+            'api_key_fingerprint' => 'abc123',
+            'linked_production_token' => null,
+            'has_previous_api_key_grace_period' => false,
+            'api_key_previous_expires_at' => null,
+        ],
+    ])]);
+
+    $identity = app(ApsConnect::class)->me();
+
+    expect($identity->token)->toBe('tok');
+    expect($identity->name)->toBe('My Software');
+    expect($identity->environment)->toBe('production');
+    expect($identity->hasModules)->toBeTrue();
+    expect($identity->hasApiKey)->toBeTrue();
+    expect($identity->apiKeyFingerprint)->toBe('abc123');
+    expect($identity->hasPreviousApiKeyGracePeriod)->toBeFalse();
+    expect($identity->apiKeyPreviousExpiresAt)->toBeNull();
+});
+
+it('routes licence verification to the sandbox endpoint in the development environment', function () {
+    // Built directly with development credentials rather than through the
+    // container: environment is only ever sourced from appstation.conf.json
+    // now (see ProjectConfigReaderTest), so there is no config() shortcut
+    // to force "development" for a full container resolution here.
+    $apsConnect = new ApsConnect(new RegistraClient(
+        new RegistraCredentials('dev-secret-key', 'https://registra.test/api', 'development'),
+        app(Factory::class),
+    ));
+
+    Http::fake(['*' => Http::response([
+        'success' => true, 'active' => true, 'status_active' => true, 'not_expired' => true, 'reason' => null,
+        'licence_key' => 'APS-DEV-ACTIVE', 'status' => 'active', 'expires_at' => null, 'remaining_days' => null,
+        'modules' => [], 'message' => null,
+    ])]);
+
+    $apsConnect->verifyLicence('APS-DEV-ACTIVE');
+
+    Http::assertSent(fn ($request) => $request->url() === 'https://registra.test/api/sandbox/licences/verify');
+});
+
+it('never routes trial issuance to the sandbox endpoint, even in the development environment', function () {
+    $apsConnect = new ApsConnect(new RegistraClient(
+        new RegistraCredentials('dev-secret-key', 'https://registra.test/api', 'development'),
+        app(Factory::class),
+    ));
+
+    Http::fake(['*' => Http::response([
+        'success' => true, 'message' => 'ok', 'licence_key' => 'LIC-TRIAL', 'trial_period_days' => 14,
+        'must_activate_before_at' => null, 'usage_period' => ['value' => 1, 'unit' => 'month', 'label' => 'Mois'],
+        'customer' => ['email' => 'trial@example.com'],
+    ])]);
+
+    $apsConnect->issueTrial(['email' => 'trial@example.com']);
+
+    Http::assertSent(fn ($request) => $request->url() === 'https://registra.test/api/licences/trial');
+});
