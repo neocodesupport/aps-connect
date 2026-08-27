@@ -10,7 +10,15 @@
     <a href="https://packagist.org/packages/neocode/aps-connect"><img src="https://img.shields.io/packagist/dt/neocode/aps-connect.svg?style=flat-square" alt="Total Downloads"></a>
 </p>
 
+<p align="center">
+    <strong>English</strong> | <a href="README.fr.md">Français</a>
+</p>
 
+A stateless Laravel client for [Registra](https://registra.neocode.ci) licence
+verification and App Station software distribution & auto-updates, exposed
+through a single `ApsConnect` facade. The package never persists anything
+itself — you store the API keys and results it returns in your own
+application.
 
 ## Installation
 

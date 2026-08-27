@@ -1,7 +1,7 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
     "name": "neocode/aps-connect",
-    "description": "",
+    "description": "A stateless Laravel client for Registra licence verification and App Station software distribution & auto-updates.",
     "keywords": [
         "laravel",
         "meledjearmel",
