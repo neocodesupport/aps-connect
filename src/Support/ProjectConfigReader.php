@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace ApsConnect\ApsConnect\Support;
+namespace Neocode\ApsConnect\Support;
 
-use ApsConnect\ApsConnect\Data\AppStationCredentials;
-use ApsConnect\ApsConnect\Data\RegistraCredentials;
-use ApsConnect\ApsConnect\Exceptions\MissingCredentialsException;
+use Neocode\ApsConnect\Data\AppStationCredentials;
+use Neocode\ApsConnect\Data\RegistraCredentials;
+use Neocode\ApsConnect\Exceptions\MissingCredentialsException;
 
 /**
  * Resolves Registra credentials the same way the `aps` CLI's own project

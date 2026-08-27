@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace ApsConnect\ApsConnect;
+namespace Neocode\ApsConnect;
 
-use ApsConnect\ApsConnect\Console\Commands\ApsConnectDoctorCommand;
-use ApsConnect\ApsConnect\Data\AppStationCredentials;
-use ApsConnect\ApsConnect\Data\RegistraCredentials;
-use ApsConnect\ApsConnect\Http\AppStationClient;
-use ApsConnect\ApsConnect\Http\RegistraClient;
-use ApsConnect\ApsConnect\Support\ProjectConfigReader;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\ServiceProvider;
+use Neocode\ApsConnect\Console\Commands\ApsConnectDoctorCommand;
+use Neocode\ApsConnect\Data\AppStationCredentials;
+use Neocode\ApsConnect\Data\RegistraCredentials;
+use Neocode\ApsConnect\Http\AppStationClient;
+use Neocode\ApsConnect\Http\RegistraClient;
+use Neocode\ApsConnect\Support\ProjectConfigReader;
 
 class ApsConnectServiceProvider extends ServiceProvider
 {

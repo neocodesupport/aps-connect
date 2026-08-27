@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-use ApsConnect\ApsConnect\Data\AppStationCredentials;
-use ApsConnect\ApsConnect\Data\RegistraCredentials;
-use ApsConnect\ApsConnect\Support\ProjectConfigReader;
 use Illuminate\Support\Facades\Http;
+use Neocode\ApsConnect\Data\AppStationCredentials;
+use Neocode\ApsConnect\Data\RegistraCredentials;
+use Neocode\ApsConnect\Support\ProjectConfigReader;
 
 beforeEach(function () {
     // See ApsConnectServiceProviderTest for why this rebinds to an isolated

@@ -14,14 +14,14 @@ Use this skill when a Laravel application needs to integrate the Aps Connect pac
 
 ## Primary Goal
 
-- apply the `meledjearmel/aps-connect` package's public API in the smallest correct way
+- apply the `neocode/aps-connect` package's public API in the smallest correct way
 
 ## Workflow
 
 ### 1. Install and publish config
 
 ```bash
-composer require meledjearmel/aps-connect
+composer require neocode/aps-connect
 php artisan vendor:publish --tag="aps-connect-config"
 ```
 
@@ -31,7 +31,7 @@ ships no migrations, views, translations, or assets.
 
 ### 2. Provide `appstation.conf.json` at the project root
 
-All credentials are resolved by `ApsConnect\ApsConnect\Support\ProjectConfigReader`
+All credentials are resolved by `Neocode\ApsConnect\Support\ProjectConfigReader`
 from an `appstation.conf.json` file at the application's base path (written by the
 `aps` CLI, e.g. `aps init`):
 
@@ -73,7 +73,7 @@ hand, already includes `/api`.
 Licensing (Registra):
 
 ```php
-use ApsConnect\ApsConnect\Facades\ApsConnect;
+use Neocode\ApsConnect\Facades\ApsConnect;
 
 $status = ApsConnect::verifyLicence($licenceKey);
 $verification = ApsConnect::verifyModuleLicence($licenceKey, $moduleSlug);
@@ -105,7 +105,7 @@ if ($update->updateAvailable) {
 ### 4. Catch the right exception hierarchy
 
 Registra calls (`verifyLicence`, `subscribe`, `me`, ...) throw subclasses of
-`ApsConnect\ApsConnect\Exceptions\RegistraRequestException`:
+`Neocode\ApsConnect\Exceptions\RegistraRequestException`:
 `InvalidApiKeyException` (401), `LicenceInactiveException` (403),
 `LicenceNotFoundException` (404), `LicenceConflictException` (409),
 `RegistraValidationException` (422, has `$errors`), `RegistraUnavailableException`
@@ -113,7 +113,7 @@ Registra calls (`verifyLicence`, `subscribe`, `me`, ...) throw subclasses of
 
 App Station calls (`registerSoftwareInstance`, `downloadPackage`, `checkForUpdate`)
 throw a **separate** hierarchy under
-`ApsConnect\ApsConnect\Exceptions\AppStationRequestException`:
+`Neocode\ApsConnect\Exceptions\AppStationRequestException`:
 `InvalidAppStationApiKeyException` (401), `AppStationLicenceRejectedException` (403),
 `PackageReleaseNotFoundException` (404), `AppStationValidationException` (422, has
 `$errors`), `AppStationUnavailableException` (429/503, has `$retryAfter`). Do not

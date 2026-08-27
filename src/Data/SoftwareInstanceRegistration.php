@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ApsConnect\ApsConnect\Data;
+namespace Neocode\ApsConnect\Data;
 
 final readonly class SoftwareInstanceRegistration
 {

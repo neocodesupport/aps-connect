@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace ApsConnect\ApsConnect\Console\Commands;
+namespace Neocode\ApsConnect\Console\Commands;
 
-use ApsConnect\ApsConnect\ApsConnect;
-use ApsConnect\ApsConnect\Data\AppStationCredentials;
-use ApsConnect\ApsConnect\Exceptions\ApsConnectException;
-use ApsConnect\ApsConnect\Exceptions\InvalidApiKeyException;
-use ApsConnect\ApsConnect\Exceptions\LicenceNotFoundException;
 use Illuminate\Console\Command;
+use Neocode\ApsConnect\ApsConnect;
+use Neocode\ApsConnect\Data\AppStationCredentials;
+use Neocode\ApsConnect\Exceptions\ApsConnectException;
+use Neocode\ApsConnect\Exceptions\InvalidApiKeyException;
+use Neocode\ApsConnect\Exceptions\LicenceNotFoundException;
 
 class ApsConnectDoctorCommand extends Command
 {

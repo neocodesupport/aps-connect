@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-use ApsConnect\ApsConnect\Data\RegistraCredentials;
-use ApsConnect\ApsConnect\Exceptions\InvalidApiKeyException;
-use ApsConnect\ApsConnect\Exceptions\LicenceConflictException;
-use ApsConnect\ApsConnect\Exceptions\LicenceInactiveException;
-use ApsConnect\ApsConnect\Exceptions\LicenceNotFoundException;
-use ApsConnect\ApsConnect\Exceptions\RegistraRequestException;
-use ApsConnect\ApsConnect\Exceptions\RegistraUnavailableException;
-use ApsConnect\ApsConnect\Exceptions\RegistraValidationException;
-use ApsConnect\ApsConnect\Http\RegistraClient;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
+use Neocode\ApsConnect\Data\RegistraCredentials;
+use Neocode\ApsConnect\Exceptions\InvalidApiKeyException;
+use Neocode\ApsConnect\Exceptions\LicenceConflictException;
+use Neocode\ApsConnect\Exceptions\LicenceInactiveException;
+use Neocode\ApsConnect\Exceptions\LicenceNotFoundException;
+use Neocode\ApsConnect\Exceptions\RegistraRequestException;
+use Neocode\ApsConnect\Exceptions\RegistraUnavailableException;
+use Neocode\ApsConnect\Exceptions\RegistraValidationException;
+use Neocode\ApsConnect\Http\RegistraClient;
 
 beforeEach(function () {
     $this->baseUrl = config('aps-connect.registra_base_url');

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ApsConnect\ApsConnect\Exceptions;
+namespace Neocode\ApsConnect\Exceptions;
 
 class AppStationRequestException extends ApsConnectException
 {

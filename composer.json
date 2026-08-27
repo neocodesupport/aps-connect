@@ -1,18 +1,26 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "meledjearmel/aps-connect",
+    "name": "neocode/aps-connect",
     "description": "",
     "keywords": [
         "laravel",
         "meledjearmel",
+        "neocode",
         "aps-connect"
     ],
-    "homepage": "https://github.com/meledjearmel/aps-connect",
+    "homepage": "https://github.com/neocodesupport/aps-connect",
     "license": "MIT",
     "authors": [
         {
+            "name": "NeoCode",
+            "email": "support@neocode.ci",
+            "homepage": "https://neocode.ci",
+            "role": "Developer"
+        },
+        {
             "name": "Armel Meledje",
             "email": "meledjearmel@gmail.com",
+            "homepage": "https://neocode.ci",
             "role": "Developer"
         }
     ],
@@ -35,12 +43,12 @@
     },
     "autoload": {
         "psr-4": {
-            "ApsConnect\\ApsConnect\\": "src/"
+            "Neocode\\ApsConnect\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "ApsConnect\\ApsConnect\\Tests\\": "tests/",
+            "Neocode\\ApsConnect\\Tests\\": "tests/",
             "Workbench\\App\\": "workbench/app/",
             "Workbench\\Database\\Factories\\": "workbench/database/factories/",
             "Workbench\\Database\\Seeders\\": "workbench/database/seeders/"
@@ -75,7 +83,7 @@
             "vendor/bin/pest --type-coverage --min=100"
         ],
         "test:unit": [
-            "vendor/bin/pest --parallel"
+            "vendor/bin/pest"
         ],
         "test": [
             "@analyse",
@@ -90,10 +98,10 @@
     "extra": {
         "laravel": {
             "providers": [
-                "ApsConnect\\ApsConnect\\ApsConnectServiceProvider"
+                "Neocode\\ApsConnect\\ApsConnectServiceProvider"
             ],
             "aliases": {
-                "ApsConnect": "ApsConnect\\ApsConnect\\Facades\\ApsConnect"
+                "ApsConnect": "Neocode\\ApsConnect\\Facades\\ApsConnect"
             }
         }
     },

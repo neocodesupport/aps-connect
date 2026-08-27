@@ -3,11 +3,11 @@
 </div>
 
 <p align="center">
-    <a href="https://packagist.org/packages/meledjearmel/aps-connect"><img src="https://img.shields.io/packagist/v/meledjearmel/aps-connect.svg?style=flat-square" alt="Packagist"></a>
-    <a href="https://packagist.org/packages/meledjearmel/aps-connect"><img src="https://img.shields.io/packagist/php-v/meledjearmel/aps-connect.svg?style=flat-square" alt="PHP from Packagist"></a>
-    <a href="https://packagist.org/packages/meledjearmel/aps-connect"><img src="https://badge.laravel.cloud/badge/meledjearmel/aps-connect?style=flat" alt="Laravel versions"></a>
-    <a href="https://github.com/meledjearmel/aps-connect/actions"><img alt="GitHub Workflow Status (main)" src="https://img.shields.io/github/actions/workflow/status/meledjearmel/aps-connect/tests.yml?branch=main&label=Tests&style=flat-square"></a>
-    <a href="https://packagist.org/packages/meledjearmel/aps-connect"><img src="https://img.shields.io/packagist/dt/meledjearmel/aps-connect.svg?style=flat-square" alt="Total Downloads"></a>
+    <a href="https://packagist.org/packages/neocode/aps-connect"><img src="https://img.shields.io/packagist/v/neocode/aps-connect.svg?style=flat-square" alt="Packagist"></a>
+    <a href="https://packagist.org/packages/neocode/aps-connect"><img src="https://img.shields.io/packagist/php-v/neocode/aps-connect.svg?style=flat-square" alt="PHP from Packagist"></a>
+    <a href="https://packagist.org/packages/neocode/aps-connect"><img src="https://badge.laravel.cloud/badge/neocode/aps-connect?style=flat" alt="Laravel versions"></a>
+    <a href="https://github.com/neocodesupport/aps-connect/actions"><img alt="GitHub Workflow Status (main)" src="https://img.shields.io/github/actions/workflow/status/neocodesupport/aps-connect/tests.yml?branch=main&label=Tests&style=flat-square"></a>
+    <a href="https://packagist.org/packages/neocode/aps-connect"><img src="https://img.shields.io/packagist/dt/neocode/aps-connect.svg?style=flat-square" alt="Total Downloads"></a>
 </p>
 
 
@@ -17,7 +17,7 @@
 You can install the package via Composer:
 
 ```bash
-composer require meledjearmel/aps-connect
+composer require neocode/aps-connect
 ```
 
 The package ships a single publishable resource, its config file:
@@ -63,7 +63,7 @@ accepted and see the resolved App Station configuration.
 ## Usage
 
 ```php
-use ApsConnect\ApsConnect\Facades\ApsConnect;
+use Neocode\ApsConnect\Facades\ApsConnect;
 
 // Licensing (Registra)
 $status = ApsConnect::verifyLicence($licenceKey);

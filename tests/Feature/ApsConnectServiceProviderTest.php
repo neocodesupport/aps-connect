@@ -2,15 +2,15 @@
 
 declare(strict_types=1);
 
-use ApsConnect\ApsConnect\ApsConnect;
-use ApsConnect\ApsConnect\ApsConnectServiceProvider;
-use ApsConnect\ApsConnect\Data\AppStationCredentials;
-use ApsConnect\ApsConnect\Data\RegistraCredentials;
-use ApsConnect\ApsConnect\Http\AppStationClient;
-use ApsConnect\ApsConnect\Http\RegistraClient;
-use ApsConnect\ApsConnect\Support\ProjectConfigReader;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\ServiceProvider;
+use Neocode\ApsConnect\ApsConnect;
+use Neocode\ApsConnect\ApsConnectServiceProvider;
+use Neocode\ApsConnect\Data\AppStationCredentials;
+use Neocode\ApsConnect\Data\RegistraCredentials;
+use Neocode\ApsConnect\Http\AppStationClient;
+use Neocode\ApsConnect\Http\RegistraClient;
+use Neocode\ApsConnect\Support\ProjectConfigReader;
 
 beforeEach(function () {
     // The service provider resolves RegistraCredentials via

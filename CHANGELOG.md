@@ -1,6 +1,6 @@
 # Release Notes
 
-## [Unreleased](https://github.com/meledjearmel/aps-connect/compare/v0.1.0...1.x)
+## [Unreleased](https://github.com/neocodesupport/aps-connect/compare/v0.1.0...1.x)
 
 ### Enhancements
 
@@ -14,6 +14,6 @@
   when `appstation.conf.json` doesn't set `api.baseUrl` / `appstation.baseUrl` —
   an explicit value in the file still always wins.
 
-## [v0.1.0](https://github.com/meledjearmel/aps-connect/compare/...v0.1.0) - 202x-xx-xx
+## [v0.1.0](https://github.com/neocodesupport/aps-connect/compare/...v0.1.0) - 202x-xx-xx
 
 Initial pre-release.

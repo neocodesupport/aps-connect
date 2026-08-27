@@ -2,19 +2,19 @@
 
 declare(strict_types=1);
 
-namespace ApsConnect\ApsConnect\Http;
+namespace Neocode\ApsConnect\Http;
 
-use ApsConnect\ApsConnect\Data\RegistraCredentials;
-use ApsConnect\ApsConnect\Exceptions\InvalidApiKeyException;
-use ApsConnect\ApsConnect\Exceptions\LicenceConflictException;
-use ApsConnect\ApsConnect\Exceptions\LicenceInactiveException;
-use ApsConnect\ApsConnect\Exceptions\LicenceNotFoundException;
-use ApsConnect\ApsConnect\Exceptions\RegistraRequestException;
-use ApsConnect\ApsConnect\Exceptions\RegistraUnavailableException;
-use ApsConnect\ApsConnect\Exceptions\RegistraValidationException;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
+use Neocode\ApsConnect\Data\RegistraCredentials;
+use Neocode\ApsConnect\Exceptions\InvalidApiKeyException;
+use Neocode\ApsConnect\Exceptions\LicenceConflictException;
+use Neocode\ApsConnect\Exceptions\LicenceInactiveException;
+use Neocode\ApsConnect\Exceptions\LicenceNotFoundException;
+use Neocode\ApsConnect\Exceptions\RegistraRequestException;
+use Neocode\ApsConnect\Exceptions\RegistraUnavailableException;
+use Neocode\ApsConnect\Exceptions\RegistraValidationException;
 
 final class RegistraClient
 {

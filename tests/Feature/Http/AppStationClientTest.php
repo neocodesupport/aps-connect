@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-use ApsConnect\ApsConnect\Data\AppStationCredentials;
-use ApsConnect\ApsConnect\Exceptions\AppStationLicenceRejectedException;
-use ApsConnect\ApsConnect\Exceptions\AppStationRequestException;
-use ApsConnect\ApsConnect\Exceptions\AppStationUnavailableException;
-use ApsConnect\ApsConnect\Exceptions\AppStationValidationException;
-use ApsConnect\ApsConnect\Exceptions\InvalidAppStationApiKeyException;
-use ApsConnect\ApsConnect\Exceptions\PackageReleaseNotFoundException;
-use ApsConnect\ApsConnect\Http\AppStationClient;
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
+use Neocode\ApsConnect\Data\AppStationCredentials;
+use Neocode\ApsConnect\Exceptions\AppStationLicenceRejectedException;
+use Neocode\ApsConnect\Exceptions\AppStationRequestException;
+use Neocode\ApsConnect\Exceptions\AppStationUnavailableException;
+use Neocode\ApsConnect\Exceptions\AppStationValidationException;
+use Neocode\ApsConnect\Exceptions\InvalidAppStationApiKeyException;
+use Neocode\ApsConnect\Exceptions\PackageReleaseNotFoundException;
+use Neocode\ApsConnect\Http\AppStationClient;
 
 beforeEach(function () {
     // appstation.baseUrl is the bare App Station domain (no /api/v1) — the

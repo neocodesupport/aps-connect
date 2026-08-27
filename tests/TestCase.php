@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace ApsConnect\ApsConnect\Tests;
+namespace Neocode\ApsConnect\Tests;
 
-use ApsConnect\ApsConnect\ApsConnectServiceProvider;
+use Neocode\ApsConnect\ApsConnectServiceProvider;
 use Orchestra\Testbench\TestCase as Orchestra;
 
 abstract class TestCase extends Orchestra

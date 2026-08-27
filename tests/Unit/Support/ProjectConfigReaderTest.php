@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use ApsConnect\ApsConnect\Data\RegistraCredentials;
-use ApsConnect\ApsConnect\Exceptions\MissingCredentialsException;
-use ApsConnect\ApsConnect\Support\ProjectConfigReader;
+use Neocode\ApsConnect\Data\RegistraCredentials;
+use Neocode\ApsConnect\Exceptions\MissingCredentialsException;
+use Neocode\ApsConnect\Support\ProjectConfigReader;
 
 /**
  * @param  array<string, mixed>|null  $projectConfig

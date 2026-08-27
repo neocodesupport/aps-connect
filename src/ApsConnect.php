@@ -2,22 +2,22 @@
 
 declare(strict_types=1);
 
-namespace ApsConnect\ApsConnect;
+namespace Neocode\ApsConnect;
 
-use ApsConnect\ApsConnect\Data\LicenceStatus;
-use ApsConnect\ApsConnect\Data\ModuleTrialIssued;
-use ApsConnect\ApsConnect\Data\ModuleVerification;
-use ApsConnect\ApsConnect\Data\PackageDownload;
-use ApsConnect\ApsConnect\Data\SoftwareIdentity;
-use ApsConnect\ApsConnect\Data\SoftwareInstanceRegistration;
-use ApsConnect\ApsConnect\Data\StandaloneModuleActivation;
-use ApsConnect\ApsConnect\Data\StandaloneModuleAttachment;
-use ApsConnect\ApsConnect\Data\StandaloneModuleLicence;
-use ApsConnect\ApsConnect\Data\SubscriptionResult;
-use ApsConnect\ApsConnect\Data\TrialIssued;
-use ApsConnect\ApsConnect\Data\UpdateCheckResult;
-use ApsConnect\ApsConnect\Http\AppStationClient;
-use ApsConnect\ApsConnect\Http\RegistraClient;
+use Neocode\ApsConnect\Data\LicenceStatus;
+use Neocode\ApsConnect\Data\ModuleTrialIssued;
+use Neocode\ApsConnect\Data\ModuleVerification;
+use Neocode\ApsConnect\Data\PackageDownload;
+use Neocode\ApsConnect\Data\SoftwareIdentity;
+use Neocode\ApsConnect\Data\SoftwareInstanceRegistration;
+use Neocode\ApsConnect\Data\StandaloneModuleActivation;
+use Neocode\ApsConnect\Data\StandaloneModuleAttachment;
+use Neocode\ApsConnect\Data\StandaloneModuleLicence;
+use Neocode\ApsConnect\Data\SubscriptionResult;
+use Neocode\ApsConnect\Data\TrialIssued;
+use Neocode\ApsConnect\Data\UpdateCheckResult;
+use Neocode\ApsConnect\Http\AppStationClient;
+use Neocode\ApsConnect\Http\RegistraClient;
 
 final class ApsConnect
 {
