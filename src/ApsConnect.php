@@ -7,17 +7,24 @@ namespace ApsConnect\ApsConnect;
 use ApsConnect\ApsConnect\Data\LicenceStatus;
 use ApsConnect\ApsConnect\Data\ModuleTrialIssued;
 use ApsConnect\ApsConnect\Data\ModuleVerification;
+use ApsConnect\ApsConnect\Data\PackageDownload;
 use ApsConnect\ApsConnect\Data\SoftwareIdentity;
+use ApsConnect\ApsConnect\Data\SoftwareInstanceRegistration;
 use ApsConnect\ApsConnect\Data\StandaloneModuleActivation;
 use ApsConnect\ApsConnect\Data\StandaloneModuleAttachment;
 use ApsConnect\ApsConnect\Data\StandaloneModuleLicence;
 use ApsConnect\ApsConnect\Data\SubscriptionResult;
 use ApsConnect\ApsConnect\Data\TrialIssued;
+use ApsConnect\ApsConnect\Data\UpdateCheckResult;
+use ApsConnect\ApsConnect\Http\AppStationClient;
 use ApsConnect\ApsConnect\Http\RegistraClient;
 
 final class ApsConnect
 {
-    public function __construct(private readonly RegistraClient $client) {}
+    public function __construct(
+        private readonly RegistraClient $client,
+        private readonly AppStationClient $appStation,
+    ) {}
 
     public function verifyLicence(string $licenceKey): LicenceStatus
     {
@@ -110,5 +117,35 @@ final class ApsConnect
         $body = $this->client->get('software/me');
 
         return SoftwareIdentity::fromArray($body['data']);
+    }
+
+    /**
+     * Registers (or, given the same $clientReference again, resolves) a
+     * deployment of this software at a final customer's site with App
+     * Station's distribution system, after verifying $licenceKey. Always pass
+     * a stable $clientReference (e.g. a tenant or device id) — App Station
+     * treats it as the idempotency key: reusing it returns the existing
+     * instance and its existing API key, while omitting it creates a new
+     * instance (and a new API key) on every call.
+     */
+    public function registerSoftwareInstance(string $licenceKey, string $clientReference, ?string $label = null): SoftwareInstanceRegistration
+    {
+        return SoftwareInstanceRegistration::fromArray(
+            $this->appStation->registerInstance($licenceKey, $clientReference, $label),
+        );
+    }
+
+    public function downloadPackage(string $instanceApiKey, int $packageReleaseId, ?string $moduleLicenceKey = null): PackageDownload
+    {
+        return PackageDownload::fromArray(
+            $this->appStation->downloadPackage($instanceApiKey, $packageReleaseId, $moduleLicenceKey),
+        );
+    }
+
+    public function checkForUpdate(string $instanceApiKey, string $currentVersion, ?string $platform = null, ?string $channel = null): UpdateCheckResult
+    {
+        return UpdateCheckResult::fromArray(
+            $this->appStation->checkForUpdate($instanceApiKey, $currentVersion, $platform, $channel),
+        );
     }
 }

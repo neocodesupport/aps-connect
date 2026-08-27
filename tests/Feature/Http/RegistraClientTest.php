@@ -15,7 +15,8 @@ use Illuminate\Http\Client\Factory;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
-    $this->credentials = new RegistraCredentials('secret-key', 'https://registra.test/api', 'production');
+    $this->baseUrl = config('aps-connect.registra_base_url');
+    $this->credentials = new RegistraCredentials('secret-key', $this->baseUrl, 'production');
     $this->client = new RegistraClient($this->credentials, app(Factory::class));
 });
 
@@ -25,7 +26,7 @@ it('sends the X-Software-Api-Key header to the resolved base url', function () {
     $this->client->get('software/me');
 
     Http::assertSent(function ($request) {
-        return $request->url() === 'https://registra.test/api/software/me'
+        return $request->url() === "{$this->baseUrl}/software/me"
             && $request->hasHeader('X-Software-Api-Key', 'secret-key');
     });
 });
@@ -51,12 +52,12 @@ it('does not route sandboxable calls to the sandbox prefix in production', funct
 
     $this->client->post('licences/verify', ['licence_key' => 'LIC-1'], sandboxable: true);
 
-    Http::assertSent(fn ($request) => $request->url() === 'https://registra.test/api/licences/verify');
+    Http::assertSent(fn ($request) => $request->url() === "{$this->baseUrl}/licences/verify");
 });
 
 it('routes sandboxable calls to the sandbox prefix when the environment is development', function () {
     $client = new RegistraClient(
-        new RegistraCredentials('dev-key', 'https://registra.test/api', 'development'),
+        new RegistraCredentials('dev-key', $this->baseUrl, 'development'),
         app(Factory::class),
     );
 
@@ -64,12 +65,12 @@ it('routes sandboxable calls to the sandbox prefix when the environment is devel
 
     $client->post('licences/verify', ['licence_key' => 'LIC-1'], sandboxable: true);
 
-    Http::assertSent(fn ($request) => $request->url() === 'https://registra.test/api/sandbox/licences/verify');
+    Http::assertSent(fn ($request) => $request->url() === "{$this->baseUrl}/sandbox/licences/verify");
 });
 
 it('never routes non sandboxable calls to the sandbox prefix even in development', function () {
     $client = new RegistraClient(
-        new RegistraCredentials('dev-key', 'https://registra.test/api', 'development'),
+        new RegistraCredentials('dev-key', $this->baseUrl, 'development'),
         app(Factory::class),
     );
 
@@ -77,7 +78,7 @@ it('never routes non sandboxable calls to the sandbox prefix even in development
 
     $client->post('licences/trial', ['customer' => ['email' => 'a@example.com']]);
 
-    Http::assertSent(fn ($request) => $request->url() === 'https://registra.test/api/licences/trial');
+    Http::assertSent(fn ($request) => $request->url() === "{$this->baseUrl}/licences/trial");
 });
 
 it('maps a 401 response to InvalidApiKeyException', function () {

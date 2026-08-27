@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use ApsConnect\ApsConnect\Data\RegistraCredentials;
 use ApsConnect\ApsConnect\Exceptions\MissingCredentialsException;
 use ApsConnect\ApsConnect\Support\ProjectConfigReader;
 
@@ -41,21 +42,21 @@ afterEach(function () {
 it('resolves credentials entirely from the project files when no config override is set', function () {
     writeApsConnectProjectFixtures(
         $this->basePath,
-        ['environment' => 'development', 'api' => ['baseUrl' => 'https://registra.test/api']],
+        ['environment' => 'development', 'api' => ['baseUrl' => 'https://registra.example.com/api']],
         ['auth' => ['apiKey' => 'from-local-file']],
     );
 
     $credentials = (new ProjectConfigReader($this->basePath))->credentials();
 
     expect($credentials->apiKey)->toBe('from-local-file');
-    expect($credentials->baseUrl)->toBe('https://registra.test/api');
+    expect($credentials->baseUrl)->toBe('https://registra.example.com/api');
     expect($credentials->environment)->toBe('development');
 });
 
 it('prefers explicit config over the project files for the api key only', function () {
     writeApsConnectProjectFixtures(
         $this->basePath,
-        ['environment' => 'development', 'api' => ['baseUrl' => 'https://registra.test/api']],
+        ['environment' => 'development', 'api' => ['baseUrl' => 'https://registra.example.com/api']],
         ['auth' => ['apiKey' => 'from-local-file']],
     );
 
@@ -66,28 +67,28 @@ it('prefers explicit config over the project files for the api key only', functi
     expect($credentials->apiKey)->toBe('from-config');
 });
 
-it('never lets a config/env value affect the base url, to prevent redirecting licence checks to a rogue server', function () {
+it('never lets a config default override an explicit base url in the project file, to prevent redirecting licence checks to a rogue server', function () {
     writeApsConnectProjectFixtures(
         $this->basePath,
-        ['environment' => 'production', 'api' => ['baseUrl' => 'https://registra.test/api']],
+        ['environment' => 'production', 'api' => ['baseUrl' => 'https://registra.example.com/api']],
         ['auth' => ['apiKey' => 'prod-key']],
     );
 
-    // There is no 'aps-connect.base_url' config key at all anymore — this
-    // simulates something (a deployer's own service provider, a stray env
-    // var read elsewhere) setting one anyway at runtime, and confirms it is
-    // never consulted for the base url.
-    config(['aps-connect.base_url' => 'https://attacker.example/api']);
+    // appstation.conf.json already declares an explicit api.baseUrl above —
+    // this simulates something (a deployer's own service provider, a stray
+    // env var read elsewhere) setting the config default anyway at runtime,
+    // and confirms it never overrides the explicit, versioned file value.
+    config(['aps-connect.registra_base_url' => 'https://attacker.example/api']);
 
     $credentials = (new ProjectConfigReader($this->basePath))->credentials();
 
-    expect($credentials->baseUrl)->toBe('https://registra.test/api');
+    expect($credentials->baseUrl)->toBe('https://registra.example.com/api');
 });
 
 it('uses the dev api key when the project file declares the development environment', function () {
     writeApsConnectProjectFixtures(
         $this->basePath,
-        ['environment' => 'development', 'api' => ['baseUrl' => 'https://registra.test/api']],
+        ['environment' => 'development', 'api' => ['baseUrl' => 'https://registra.example.com/api']],
         null,
     );
 
@@ -102,7 +103,7 @@ it('uses the dev api key when the project file declares the development environm
 it('uses the production api key when the project file declares the production environment', function () {
     writeApsConnectProjectFixtures(
         $this->basePath,
-        ['environment' => 'production', 'api' => ['baseUrl' => 'https://registra.test/api']],
+        ['environment' => 'production', 'api' => ['baseUrl' => 'https://registra.example.com/api']],
         null,
     );
 
@@ -115,7 +116,7 @@ it('uses the production api key when the project file declares the production en
 });
 
 it('defaults to production when the project file does not declare an environment', function () {
-    writeApsConnectProjectFixtures($this->basePath, ['api' => ['baseUrl' => 'https://registra.test/api']], null);
+    writeApsConnectProjectFixtures($this->basePath, ['api' => ['baseUrl' => 'https://registra.example.com/api']], null);
 
     config(['aps-connect.api_key' => 'prod-key']);
 
@@ -125,19 +126,101 @@ it('defaults to production when the project file does not declare an environment
 });
 
 it('throws when no api key can be resolved', function () {
-    writeApsConnectProjectFixtures($this->basePath, ['api' => ['baseUrl' => 'https://registra.test/api']], null);
+    writeApsConnectProjectFixtures($this->basePath, ['api' => ['baseUrl' => 'https://registra.example.com/api']], null);
 
     (new ProjectConfigReader($this->basePath))->credentials();
 })->throws(MissingCredentialsException::class);
 
-it('throws when the project file has no base url', function () {
+it('falls back to the config default when the project file has no api.baseUrl', function () {
     writeApsConnectProjectFixtures($this->basePath, ['environment' => 'production'], ['auth' => ['apiKey' => 'a-key']]);
 
+    $credentials = (new ProjectConfigReader($this->basePath))->credentials();
+
+    expect($credentials->baseUrl)->toBe(config('aps-connect.registra_base_url'));
+});
+
+it('falls back to the config default when there is no project file at all', function () {
+    config(['aps-connect.api_key' => 'prod-key']);
+
+    $credentials = (new ProjectConfigReader($this->basePath))->credentials();
+
+    expect($credentials->baseUrl)->toBe(config('aps-connect.registra_base_url'));
+    expect($credentials->environment)->toBe('production');
+});
+
+it('throws when neither the project file nor the config default provide a base url', function () {
+    writeApsConnectProjectFixtures($this->basePath, ['environment' => 'production'], ['auth' => ['apiKey' => 'a-key']]);
+
+    config(['aps-connect.registra_base_url' => null]);
+
     (new ProjectConfigReader($this->basePath))->credentials();
 })->throws(MissingCredentialsException::class);
 
-it('throws when there is no project file at all, since the base url has no config/env fallback', function () {
-    config(['aps-connect.api_key' => 'prod-key']);
+it('resolves App Station credentials from the project file, reusing the Registra api key', function () {
+    writeApsConnectProjectFixtures(
+        $this->basePath,
+        [
+            'environment' => 'production',
+            'api' => ['baseUrl' => config('aps-connect.registra_base_url')],
+            'appstation' => ['baseUrl' => 'https://app-station.example.com'],
+        ],
+        null,
+    );
 
-    (new ProjectConfigReader($this->basePath))->credentials();
+    $registraCredentials = new RegistraCredentials('product-key', config('aps-connect.registra_base_url'), 'production');
+
+    $credentials = (new ProjectConfigReader($this->basePath))->appStationCredentials($registraCredentials);
+
+    expect($credentials->apiKey)->toBe('product-key');
+    expect($credentials->baseUrl)->toBe('https://app-station.example.com');
+});
+
+it('never lets a config default override an explicit App Station base url in the project file, to prevent redirecting distribution calls to a rogue server', function () {
+    writeApsConnectProjectFixtures(
+        $this->basePath,
+        [
+            'environment' => 'production',
+            'api' => ['baseUrl' => config('aps-connect.registra_base_url')],
+            'appstation' => ['baseUrl' => 'https://app-station.example.com'],
+        ],
+        null,
+    );
+
+    config(['aps-connect.appstation_base_url' => 'https://attacker.example/api']);
+
+    $registraCredentials = new RegistraCredentials('product-key', config('aps-connect.registra_base_url'), 'production');
+
+    $credentials = (new ProjectConfigReader($this->basePath))->appStationCredentials($registraCredentials);
+
+    expect($credentials->baseUrl)->toBe('https://app-station.example.com');
+});
+
+it('falls back to the config default when the project file has no appstation.baseUrl', function () {
+    writeApsConnectProjectFixtures(
+        $this->basePath,
+        ['environment' => 'production', 'api' => ['baseUrl' => config('aps-connect.registra_base_url')]],
+        null,
+    );
+
+    $registraCredentials = new RegistraCredentials('product-key', config('aps-connect.registra_base_url'), 'production');
+
+    $credentials = (new ProjectConfigReader($this->basePath))->appStationCredentials($registraCredentials);
+
+    expect($credentials->baseUrl)->toBe(config('aps-connect.appstation_base_url'));
+});
+
+it('falls back to the config default when there is no project file at all for App Station credentials', function () {
+    $registraCredentials = new RegistraCredentials('product-key', config('aps-connect.registra_base_url'), 'production');
+
+    $credentials = (new ProjectConfigReader($this->basePath))->appStationCredentials($registraCredentials);
+
+    expect($credentials->baseUrl)->toBe(config('aps-connect.appstation_base_url'));
+});
+
+it('throws when neither the project file nor the config default provide an App Station base url', function () {
+    config(['aps-connect.appstation_base_url' => null]);
+
+    $registraCredentials = new RegistraCredentials('product-key', config('aps-connect.registra_base_url'), 'production');
+
+    (new ProjectConfigReader($this->basePath))->appStationCredentials($registraCredentials);
 })->throws(MissingCredentialsException::class);

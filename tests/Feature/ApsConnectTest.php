@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use ApsConnect\ApsConnect\ApsConnect;
+use ApsConnect\ApsConnect\Data\AppStationCredentials;
 use ApsConnect\ApsConnect\Data\RegistraCredentials;
+use ApsConnect\ApsConnect\Http\AppStationClient;
 use ApsConnect\ApsConnect\Http\RegistraClient;
 use ApsConnect\ApsConnect\Support\ProjectConfigReader;
 use Illuminate\Http\Client\Factory;
@@ -11,19 +13,19 @@ use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
     // See ApsConnectServiceProviderTest for why this rebinds to an isolated
-    // temp directory instead of using config('aps-connect.base_url') — that
-    // key no longer exists, on purpose (base url only ever comes from
-    // appstation.conf.json).
+    // temp directory. No explicit api.baseUrl/appstation.baseUrl here: both
+    // fall back to config('aps-connect.registra_base_url') /
+    // ::appstation_base_url.
     $this->basePath = sys_get_temp_dir().'/aps-connect-tests-'.uniqid();
     mkdir($this->basePath, recursive: true);
     file_put_contents($this->basePath.'/appstation.conf.json', json_encode([
         'environment' => 'production',
-        'api' => ['baseUrl' => 'https://registra.test/api'],
     ]));
 
     config(['aps-connect.api_key' => 'secret-key']);
 
     app()->singleton(RegistraCredentials::class, fn () => (new ProjectConfigReader($this->basePath))->credentials());
+    app()->singleton(AppStationCredentials::class, fn () => (new ProjectConfigReader($this->basePath))->appStationCredentials(app(RegistraCredentials::class)));
 });
 
 afterEach(function () {
@@ -331,8 +333,13 @@ it('routes licence verification to the sandbox endpoint in the development envir
     // container: environment is only ever sourced from appstation.conf.json
     // now (see ProjectConfigReaderTest), so there is no config() shortcut
     // to force "development" for a full container resolution here.
+    $registraBaseUrl = config('aps-connect.registra_base_url');
+
     $apsConnect = new ApsConnect(new RegistraClient(
-        new RegistraCredentials('dev-secret-key', 'https://registra.test/api', 'development'),
+        new RegistraCredentials('dev-secret-key', $registraBaseUrl, 'development'),
+        app(Factory::class),
+    ), new AppStationClient(
+        new AppStationCredentials('dev-secret-key', config('aps-connect.appstation_base_url')),
         app(Factory::class),
     ));
 
@@ -344,12 +351,17 @@ it('routes licence verification to the sandbox endpoint in the development envir
 
     $apsConnect->verifyLicence('APS-DEV-ACTIVE');
 
-    Http::assertSent(fn ($request) => $request->url() === 'https://registra.test/api/sandbox/licences/verify');
+    Http::assertSent(fn ($request) => $request->url() === "{$registraBaseUrl}/sandbox/licences/verify");
 });
 
 it('never routes trial issuance to the sandbox endpoint, even in the development environment', function () {
+    $registraBaseUrl = config('aps-connect.registra_base_url');
+
     $apsConnect = new ApsConnect(new RegistraClient(
-        new RegistraCredentials('dev-secret-key', 'https://registra.test/api', 'development'),
+        new RegistraCredentials('dev-secret-key', $registraBaseUrl, 'development'),
+        app(Factory::class),
+    ), new AppStationClient(
+        new AppStationCredentials('dev-secret-key', config('aps-connect.appstation_base_url')),
         app(Factory::class),
     ));
 
@@ -361,5 +373,97 @@ it('never routes trial issuance to the sandbox endpoint, even in the development
 
     $apsConnect->issueTrial(['email' => 'trial@example.com']);
 
-    Http::assertSent(fn ($request) => $request->url() === 'https://registra.test/api/licences/trial');
+    Http::assertSent(fn ($request) => $request->url() === "{$registraBaseUrl}/licences/trial");
+});
+
+it('registers a software instance', function () {
+    Http::fake(['*/integrations/software/instances/register' => Http::response([
+        'instance' => [
+            'id' => 1,
+            'label' => 'Client ACME',
+            'licence_key_mask' => 'LIC-•••-1',
+            'client_reference' => 'tenant-1',
+            'status' => 'active',
+            'last_seen_at' => null,
+            'revoked_at' => null,
+            'registered_at' => '2026-08-15T00:00:00+00:00',
+        ],
+        'api_key' => 'instance-secret-key',
+    ], 201)]);
+
+    $registration = app(ApsConnect::class)->registerSoftwareInstance('LIC-1', 'tenant-1', 'Client ACME');
+
+    expect($registration->apiKey)->toBe('instance-secret-key');
+    expect($registration->instance->id)->toBe(1);
+    expect($registration->instance->label)->toBe('Client ACME');
+    expect($registration->instance->clientReference)->toBe('tenant-1');
+    expect($registration->instance->status)->toBe('active');
+    expect($registration->instance->registeredAt->toAtomString())->toBe('2026-08-15T00:00:00+00:00');
+
+    Http::assertSent(fn ($request) => $request['licence_key'] === 'LIC-1' && $request['client_reference'] === 'tenant-1');
+});
+
+it('downloads a package release', function () {
+    Http::fake(['*/integrations/software/packages/42/download' => Http::response([
+        'url' => 'https://cdn.test/package-42.zip',
+        'expires_at' => '2026-08-15T00:10:00+00:00',
+        'checksum' => 'sha256:abc123',
+    ])]);
+
+    $download = app(ApsConnect::class)->downloadPackage('instance-secret-key', 42, 'MOD-1');
+
+    expect($download->url)->toBe('https://cdn.test/package-42.zip');
+    expect($download->expiresAt->toAtomString())->toBe('2026-08-15T00:10:00+00:00');
+    expect($download->checksum)->toBe('sha256:abc123');
+
+    Http::assertSent(fn ($request) => $request->hasHeader('X-Software-Api-Key', 'instance-secret-key') && $request['module_licence_key'] === 'MOD-1');
+});
+
+it('checks for an update when one is available', function () {
+    Http::fake(['*/integrations/software/updates/check' => Http::response([
+        'update_available' => true,
+        'latest_version' => '2.0.0',
+        'release' => [
+            'id' => 7,
+            'version' => '2.0.0',
+            'platform' => 'windows',
+            'channel' => 'stable',
+            'release_notes' => 'Bug fixes',
+            'checksum' => 'sha256:def456',
+            'signature' => 'sig-1',
+            'file_size' => 1024,
+            'is_yanked' => false,
+            'published_at' => '2026-08-10T00:00:00+00:00',
+        ],
+        'url' => 'https://cdn.test/release-2.0.0.zip',
+        'expires_at' => '2026-08-15T00:10:00+00:00',
+        'checksum' => 'sha256:def456',
+        'signature' => 'sig-1',
+    ])]);
+
+    $result = app(ApsConnect::class)->checkForUpdate('instance-secret-key', '1.0.0', 'windows', 'stable');
+
+    expect($result->updateAvailable)->toBeTrue();
+    expect($result->latestVersion)->toBe('2.0.0');
+    expect($result->release->version)->toBe('2.0.0');
+    expect($result->release->isYanked)->toBeFalse();
+    expect($result->url)->toBe('https://cdn.test/release-2.0.0.zip');
+    expect($result->checksum)->toBe('sha256:def456');
+    expect($result->signature)->toBe('sig-1');
+
+    Http::assertSent(fn ($request) => $request['current_version'] === '1.0.0' && $request['platform'] === 'windows' && $request['channel'] === 'stable');
+});
+
+it('checks for an update when none is available', function () {
+    Http::fake(['*/integrations/software/updates/check' => Http::response([
+        'update_available' => false,
+        'latest_version' => '1.0.0',
+    ])]);
+
+    $result = app(ApsConnect::class)->checkForUpdate('instance-secret-key', '1.0.0');
+
+    expect($result->updateAvailable)->toBeFalse();
+    expect($result->latestVersion)->toBe('1.0.0');
+    expect($result->release)->toBeNull();
+    expect($result->url)->toBeNull();
 });

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 use ApsConnect\ApsConnect\ApsConnect;
 use ApsConnect\ApsConnect\ApsConnectServiceProvider;
+use ApsConnect\ApsConnect\Data\AppStationCredentials;
 use ApsConnect\ApsConnect\Data\RegistraCredentials;
+use ApsConnect\ApsConnect\Http\AppStationClient;
 use ApsConnect\ApsConnect\Http\RegistraClient;
 use ApsConnect\ApsConnect\Support\ProjectConfigReader;
 use Illuminate\Support\Facades\Artisan;
@@ -19,15 +21,18 @@ beforeEach(function () {
     // which is unsafe to write to under parallel test execution.
     $this->basePath = sys_get_temp_dir().'/aps-connect-tests-'.uniqid();
     mkdir($this->basePath, recursive: true);
+    // No explicit api.baseUrl/appstation.baseUrl here: both fall back to
+    // config('aps-connect.registra_base_url') / ::appstation_base_url — see
+    // ProjectConfigReaderTest for the file-vs-config precedence coverage.
     file_put_contents($this->basePath.'/appstation.conf.json', json_encode([
         'environment' => 'production',
-        'api' => ['baseUrl' => 'https://registra.test/api'],
     ]));
     file_put_contents($this->basePath.'/appstation.conf.local.json', json_encode([
         'auth' => ['apiKey' => 'secret-key'],
     ]));
 
     app()->singleton(RegistraCredentials::class, fn () => (new ProjectConfigReader($this->basePath))->credentials());
+    app()->singleton(AppStationCredentials::class, fn () => (new ProjectConfigReader($this->basePath))->appStationCredentials(app(RegistraCredentials::class)));
 });
 
 afterEach(function () {
@@ -39,7 +44,7 @@ afterEach(function () {
 });
 
 it('merges the package config', function () {
-    expect(config('aps-connect'))->toHaveKeys(['api_key', 'dev_api_key']);
+    expect(config('aps-connect'))->toHaveKeys(['api_key', 'dev_api_key', 'registra_base_url', 'appstation_base_url']);
 });
 
 it('resolves RegistraCredentials as a singleton', function () {
@@ -48,6 +53,14 @@ it('resolves RegistraCredentials as a singleton', function () {
 
 it('resolves RegistraClient as a singleton', function () {
     expect(app(RegistraClient::class))->toBe(app(RegistraClient::class));
+});
+
+it('resolves AppStationCredentials as a singleton', function () {
+    expect(app(AppStationCredentials::class))->toBe(app(AppStationCredentials::class));
+});
+
+it('resolves AppStationClient as a singleton', function () {
+    expect(app(AppStationClient::class))->toBe(app(AppStationClient::class));
 });
 
 it('resolves ApsConnect as a singleton', function () {

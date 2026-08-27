@@ -2,25 +2,26 @@
 
 declare(strict_types=1);
 
+use ApsConnect\ApsConnect\Data\AppStationCredentials;
 use ApsConnect\ApsConnect\Data\RegistraCredentials;
 use ApsConnect\ApsConnect\Support\ProjectConfigReader;
 use Illuminate\Support\Facades\Http;
 
 beforeEach(function () {
     // See ApsConnectServiceProviderTest for why this rebinds to an isolated
-    // temp directory instead of config('aps-connect.base_url') — that key
-    // no longer exists, on purpose (base url only ever comes from
-    // appstation.conf.json).
+    // temp directory. No explicit api.baseUrl/appstation.baseUrl here: both
+    // fall back to config('aps-connect.registra_base_url') /
+    // ::appstation_base_url.
     $this->basePath = sys_get_temp_dir().'/aps-connect-tests-'.uniqid();
     mkdir($this->basePath, recursive: true);
     file_put_contents($this->basePath.'/appstation.conf.json', json_encode([
         'environment' => 'production',
-        'api' => ['baseUrl' => 'https://registra.test/api'],
     ]));
 
     config(['aps-connect.api_key' => 'secret-key']);
 
     app()->singleton(RegistraCredentials::class, fn () => (new ProjectConfigReader($this->basePath))->credentials());
+    app()->singleton(AppStationCredentials::class, fn () => (new ProjectConfigReader($this->basePath))->appStationCredentials(app(RegistraCredentials::class)));
 });
 
 afterEach(function () {

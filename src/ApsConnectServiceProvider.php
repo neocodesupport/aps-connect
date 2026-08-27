@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace ApsConnect\ApsConnect;
 
 use ApsConnect\ApsConnect\Console\Commands\ApsConnectDoctorCommand;
+use ApsConnect\ApsConnect\Data\AppStationCredentials;
 use ApsConnect\ApsConnect\Data\RegistraCredentials;
+use ApsConnect\ApsConnect\Http\AppStationClient;
 use ApsConnect\ApsConnect\Http\RegistraClient;
 use ApsConnect\ApsConnect\Support\ProjectConfigReader;
 use Illuminate\Contracts\Foundation\Application;
@@ -29,6 +31,16 @@ class ApsConnectServiceProvider extends ServiceProvider
         $this->app->singleton(
             RegistraClient::class,
             fn (Application $app) => new RegistraClient($app->make(RegistraCredentials::class), $app->make(HttpFactory::class)),
+        );
+
+        $this->app->singleton(
+            AppStationCredentials::class,
+            fn (Application $app) => (new ProjectConfigReader($app->basePath()))->appStationCredentials($app->make(RegistraCredentials::class)),
+        );
+
+        $this->app->singleton(
+            AppStationClient::class,
+            fn (Application $app) => new AppStationClient($app->make(AppStationCredentials::class), $app->make(HttpFactory::class)),
         );
 
         $this->app->singleton(ApsConnect::class);
