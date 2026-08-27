@@ -46,6 +46,15 @@ application de stocker les clés API et les résultats qu'il retourne.
   - [`downloadPackage()`](#downloadpackagestring-instanceapikey-int-packagereleaseid-string-modulelicencekey--packagedownload)
   - [`checkForUpdate()`](#checkforupdatestring-instanceapikey-string-currentversion-string-platform-string-channel--updatecheckresult)
   - [Un flux de distribution complet](#un-flux-de-distribution-complet)
+- [Catalogue marketplace (App Station)](#catalogue-marketplace-app-station)
+  - [`getSoftwareReleases()`](#getsoftwarereleasesstring-slug-int-page--paginatedsoftwarerelease)
+  - [`getSoftwarePackages()`](#getsoftwarepackagesstring-slug-int-page--paginatedpackage)
+  - [`listPackages()`](#listpackagesarray-filters--paginatedpackage)
+  - [`getPackage()`](#getpackagestring-softwareslug-string-slug-package)
+  - [`getPackageReleases()`](#getpackagereleasesstring-softwareslug-string-slug-int-page--paginatedpackagerelease)
+  - [`listCategories()`](#listcategories-categorylist)
+  - [`listTags()`](#listtagsint-page--paginatedtag)
+  - [`search()`](#searchstring-query-string-type--searchresults)
 - [Gestion des exceptions](#gestion-des-exceptions)
   - [Exceptions Registra](#exceptions-registra)
   - [Exceptions App Station](#exceptions-app-station)
@@ -597,6 +606,81 @@ class SoftwareInstanceService
 }
 ```
 
+## Catalogue marketplace (App Station)
+
+Ces méthodes lisent le catalogue marketplace **public** d'App Station —
+circonscrit aux propres packages de *ce* logiciel, à leurs versions, et à la
+taxonomie associée — les mêmes données que celles visibles sur la vitrine App
+Station elle-même. Aps Connect **n'expose pas de moyen de parcourir d'autres
+logiciels sans rapport dans le marketplace** : votre intégration sait déjà
+quel logiciel elle est, il n'y a donc ni méthode « lister tous les logiciels »
+ni « récupérer un logiciel arbitraire par slug » ici — seulement des méthodes
+circonscrites aux packages de votre propre logiciel et à leurs versions.
+Contrairement à toutes les méthodes ci-dessus, les endpoints sous-jacents ne
+nécessitent **aucune authentification** côté serveur ; `AppStationClient`
+attache quand même votre en-tête produit `X-Software-Api-Key` à ces requêtes
+par cohérence, mais elle n'est pas vérifiée. Rien à persister non plus ici :
+appelez ces méthodes directement partout où vous affichez un écran « parcourir
+les add-ons » dans votre application.
+
+Chaque méthode de liste retourne un wrapper [`Paginated`](#paginatedtitem),
+qui reprend la forme du paginateur Laravel lui-même (`items`, `currentPage`,
+`lastPage`, `perPage`, `total`) — repassez `page` vous-même pour récupérer la
+page suivante.
+
+### `getSoftwareReleases(string $slug, int $page = 1): Paginated<SoftwareRelease>`
+
+L'historique des versions publiées d'une fiche logicielle (réutilise le même
+DTO [`SoftwareRelease`](#softwarerelease) que `checkForUpdate()`).
+
+### `getSoftwarePackages(string $slug, int $page = 1): Paginated<Package>`
+
+Les packages marketplace (add-ons/modules) publiés sous un logiciel donné.
+
+### `listPackages(array $filters = []): Paginated<Package>`
+
+```php
+$packages = ApsConnect::listPackages(['software_id' => $software->id, 'page' => 1]);
+```
+
+### `getPackage(string $softwareSlug, string $slug): Package`
+
+Lève `AppStationResourceNotFoundException` pour une paire slug logiciel/package
+inconnue.
+
+### `getPackageReleases(string $softwareSlug, string $slug, int $page = 1): Paginated<PackageRelease>`
+
+L'historique des versions publiées d'un package.
+
+### `listCategories(): Category[]`
+
+Retourne l'arbre complet des catégories en un seul appel (catégories de
+premier niveau avec leurs `children` imbriqués) — App Station ne pagine pas
+cet endpoint, donc ceci retourne un tableau simple plutôt qu'un `Paginated`.
+
+```php
+foreach (ApsConnect::listCategories() as $category) {
+    foreach ($category->children as $child) {
+        // ...
+    }
+}
+```
+
+### `listTags(int $page = 1): Paginated<Tag>`
+
+### `search(string $query, string $type = 'software'): SearchResults`
+
+```php
+$results = ApsConnect::search('facture', type: 'all'); // un de : software | package | all
+
+$results->softwares; // Software[]
+$results->packages;  // Package[]
+```
+
+Contrairement aux méthodes de liste ci-dessus, App Station limite les
+résultats de recherche à 10 par type et ne les pagine pas — `SearchResults`
+contient des tableaux simples, pas des wrappers `Paginated`.
+
 ## Gestion des exceptions
 
 Toutes les exceptions héritent de
@@ -629,6 +713,7 @@ Toutes héritent de `AppStationRequestException` (`status: int`, `body: array`)
 | `InvalidAppStationApiKeyException` | 401 | — | La clé produit (`registerSoftwareInstance()`) ou la clé d'instance (`downloadPackage()`/`checkForUpdate()`) a été rejetée ou révoquée. |
 | `AppStationLicenceRejectedException` | 403 | — | La licence derrière l'instance/le téléchargement ne l'autorise pas (inactive, mauvais droit module...). |
 | `PackageReleaseNotFoundException` | 404 | — | `downloadPackage()` a été appelée avec un `$packageReleaseId` inconnu. |
+| `AppStationResourceNotFoundException` | 404 | — | Une recherche du [catalogue marketplace](#catalogue-marketplace-app-station) (`getPackage()`, `getSoftwareReleases()`, `getSoftwarePackages()`, `getPackageReleases()`) a été appelée avec un slug inconnu. |
 | `AppStationValidationException` | 422 | `errors: array<string, list<string>>` | Ex. un `moduleLicenceKey` requis était manquant. |
 | `AppStationUnavailableException` | 429 ou 503 | `retryAfter: ?int` | Rate-limité ou App Station est indisponible. |
 | `AppStationRequestException` | tout autre code | — | Repli pour tout ce qui n'est pas mappé ci-dessus. |
@@ -791,6 +876,47 @@ suivent la même convention.
 `id: int`, `version: string`, `platform: ?string`, `channel: ?string`,
 `releaseNotes: ?string`, `checksum: string`, `signature: ?string`,
 `fileSize: ?int`, `isYanked: bool`, `publishedAt: ?CarbonImmutable`
+
+#### `Paginated<TItem>`
+`items: TItem[]`, `currentPage: int`, `lastPage: int`, `perPage: int`,
+`total: int` — retourné par chaque méthode de liste du catalogue marketplace.
+
+#### `Software`
+`id: int`, `name: string`, `slug: string`, `tagline: ?string`,
+`description: ?string`, `logoUrl: ?string`, `bannerUrl: ?string`,
+`licenseType: ?string`, `acquisitionMode: string`, `status: ?string`,
+`isFeatured: bool`, `hasModules: bool`, `pricePerDayXof: ?int`,
+`lifetimePriceXof: ?int`, `downloadsCount: int`, `ratingAvg: ?float`,
+`ratingCount: int`, `publisher: ?Publisher`, `categories: Category[]`,
+`tags: Tag[]`
+
+#### `Package`
+`id: int`, `name: string`, `slug: string`, `description: ?string`,
+`iconUrl: ?string`, `type: ?string`, `isOfficial: bool`, `isFeatured: bool`,
+`isIncludedInBase: bool`, `acquisitionMode: string`, `pricePerDayXof: ?int`,
+`lifetimePriceXof: ?int`, `hasTrialMode: bool`, `trialPeriodDays: ?int`,
+`status: ?string`, `downloadsCount: int`, `ratingAvg: ?float`,
+`ratingCount: int`, `software: ?Software`, `publisher: ?Publisher`
+
+#### `PackageRelease`
+`id: int`, `version: string`, `platform: ?string`, `channel: ?string`,
+`releaseNotes: ?string`, `minSoftwareVersion: ?string`,
+`maxSoftwareVersion: ?string`, `checksum: string`, `signature: ?string`,
+`fileSize: ?int`, `isYanked: bool`, `publishedAt: ?CarbonImmutable`
+
+#### `Publisher`
+`id: int`, `name: string`, `slug: string`, `description: ?string`,
+`logoUrl: ?string`, `website: ?string`, `isVerified: bool`, `status: ?string`
+
+#### `Category`
+`id: int`, `name: string`, `slug: string`, `icon: ?string`, `type: ?string`,
+`position: int`, `children: Category[]`
+
+#### `Tag`
+`id: int`, `name: string`, `slug: string`
+
+#### `SearchResults`
+`softwares: Software[]`, `packages: Package[]`
 
 #### `RegistraCredentials` / `AppStationCredentials`
 Internes, résolus par `ProjectConfigReader` et injectés par le service

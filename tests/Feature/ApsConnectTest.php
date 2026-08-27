@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Http;
 use Neocode\ApsConnect\ApsConnect;
 use Neocode\ApsConnect\Data\AppStationCredentials;
 use Neocode\ApsConnect\Data\RegistraCredentials;
+use Neocode\ApsConnect\Exceptions\AppStationResourceNotFoundException;
 use Neocode\ApsConnect\Http\AppStationClient;
 use Neocode\ApsConnect\Http\RegistraClient;
 use Neocode\ApsConnect\Support\ProjectConfigReader;
@@ -466,4 +467,194 @@ it('checks for an update when none is available', function () {
     expect($result->latestVersion)->toBe('1.0.0');
     expect($result->release)->toBeNull();
     expect($result->url)->toBeNull();
+});
+
+it('lists a software release history', function () {
+    Http::fake(['*/api/v1/softwares/corptrix/releases*' => Http::response([
+        'data' => [[
+            'id' => 7,
+            'version' => '2.0.0',
+            'platform' => 'windows',
+            'channel' => 'stable',
+            'release_notes' => 'Bug fixes',
+            'checksum' => 'sha256:abc',
+            'signature' => null,
+            'file_size' => 1024,
+            'is_yanked' => false,
+            'published_at' => '2026-08-10T00:00:00+00:00',
+        ]],
+        'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 20, 'total' => 1],
+    ])]);
+
+    $releases = app(ApsConnect::class)->getSoftwareReleases('corptrix');
+
+    expect($releases->items)->toHaveCount(1);
+    expect($releases->items[0]->version)->toBe('2.0.0');
+
+    Http::assertSent(fn ($request) => $request->url() === config('aps-connect.appstation_base_url').'/api/v1/softwares/corptrix/releases?page=1');
+});
+
+it('lists the packages published under a software', function () {
+    Http::fake(['*/api/v1/softwares/corptrix/packages*' => Http::response([
+        'data' => [[
+            'id' => 4,
+            'name' => 'Reports Pro',
+            'slug' => 'reports-pro',
+            'description' => null,
+            'icon_url' => null,
+            'type' => 'module',
+            'is_official' => true,
+            'is_featured' => false,
+            'is_included_in_base' => false,
+            'acquisition_mode' => 'one_time',
+            'price_per_day_xof' => null,
+            'lifetime_price_xof' => 15000,
+            'has_trial_mode' => true,
+            'trial_period_days' => 14,
+            'status' => 'published',
+            'downloads_count' => 40,
+            'rating_avg' => null,
+            'rating_count' => 0,
+            'publisher' => ['id' => 3, 'name' => 'Neocode', 'slug' => 'neocode', 'description' => null, 'logo_url' => null, 'website' => null, 'is_verified' => true, 'status' => 'active'],
+            'software' => ['id' => 1, 'name' => 'Corptrix', 'slug' => 'corptrix', 'tagline' => null, 'description' => null, 'logo_url' => null, 'banner_url' => null, 'license_type' => null, 'acquisition_mode' => 'subscription', 'status' => 'published', 'is_featured' => false, 'has_modules' => true, 'price_per_day_xof' => null, 'lifetime_price_xof' => null, 'downloads_count' => 0, 'rating_avg' => null, 'rating_count' => 0],
+        ]],
+        'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 12, 'total' => 1],
+    ])]);
+
+    $packages = app(ApsConnect::class)->getSoftwarePackages('corptrix');
+
+    expect($packages->items)->toHaveCount(1);
+    expect($packages->items[0]->slug)->toBe('reports-pro');
+    expect($packages->items[0]->software->slug)->toBe('corptrix');
+    expect($packages->items[0]->software->publisher)->toBeNull();
+    expect($packages->items[0]->software->categories)->toBe([]);
+});
+
+it('lists marketplace packages filtered by software id', function () {
+    Http::fake(['*/api/v1/packages*' => Http::response([
+        'data' => [],
+        'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 12, 'total' => 0],
+    ])]);
+
+    app(ApsConnect::class)->listPackages(['software_id' => 1]);
+
+    Http::assertSent(fn ($request) => $request['software_id'] === 1);
+});
+
+it('fetches a single marketplace package by software and package slug', function () {
+    Http::fake(['*/api/v1/packages/corptrix/reports-pro' => Http::response([
+        'id' => 4,
+        'name' => 'Reports Pro',
+        'slug' => 'reports-pro',
+        'description' => null,
+        'icon_url' => null,
+        'type' => 'module',
+        'is_official' => true,
+        'is_featured' => false,
+        'is_included_in_base' => false,
+        'acquisition_mode' => 'one_time',
+        'price_per_day_xof' => null,
+        'lifetime_price_xof' => 15000,
+        'has_trial_mode' => false,
+        'trial_period_days' => null,
+        'status' => 'published',
+        'downloads_count' => 40,
+        'rating_avg' => null,
+        'rating_count' => 0,
+        'publisher' => null,
+        'software' => null,
+    ])]);
+
+    $package = app(ApsConnect::class)->getPackage('corptrix', 'reports-pro');
+
+    expect($package->slug)->toBe('reports-pro');
+    expect($package->lifetimePriceXof)->toBe(15000);
+    expect($package->software)->toBeNull();
+});
+
+it('throws AppStationResourceNotFoundException when a package does not exist', function () {
+    Http::fake(['*/api/v1/packages/corptrix/missing' => Http::response(['message' => 'Package introuvable.'], 404)]);
+
+    expect(fn () => app(ApsConnect::class)->getPackage('corptrix', 'missing'))
+        ->toThrow(AppStationResourceNotFoundException::class, 'Package introuvable.');
+});
+
+it('lists a package release history', function () {
+    Http::fake(['*/api/v1/packages/corptrix/reports-pro/releases*' => Http::response([
+        'data' => [[
+            'id' => 9,
+            'version' => '1.1.0',
+            'platform' => null,
+            'channel' => 'stable',
+            'release_notes' => null,
+            'min_software_version' => '2.0.0',
+            'max_software_version' => null,
+            'checksum' => 'sha256:def',
+            'signature' => null,
+            'file_size' => null,
+            'is_yanked' => false,
+            'published_at' => '2026-08-12T00:00:00+00:00',
+        ]],
+        'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 20, 'total' => 1],
+    ])]);
+
+    $releases = app(ApsConnect::class)->getPackageReleases('corptrix', 'reports-pro');
+
+    expect($releases->items)->toHaveCount(1);
+    expect($releases->items[0]->minSoftwareVersion)->toBe('2.0.0');
+});
+
+it('lists marketplace categories with nested children', function () {
+    Http::fake(['*/api/v1/categories' => Http::response([
+        'data' => [[
+            'id' => 1,
+            'name' => 'Business',
+            'slug' => 'business',
+            'icon' => 'briefcase',
+            'type' => 'software',
+            'position' => 1,
+            'children' => [
+                ['id' => 2, 'name' => 'ERP', 'slug' => 'erp', 'icon' => null, 'type' => 'software', 'position' => 1, 'children' => []],
+            ],
+        ]],
+    ])]);
+
+    $categories = app(ApsConnect::class)->listCategories();
+
+    expect($categories)->toHaveCount(1);
+    expect($categories[0]->slug)->toBe('business');
+    expect($categories[0]->children)->toHaveCount(1);
+    expect($categories[0]->children[0]->slug)->toBe('erp');
+});
+
+it('lists marketplace tags', function () {
+    Http::fake(['*/api/v1/tags*' => Http::response([
+        'data' => [['id' => 5, 'name' => 'Finance', 'slug' => 'finance']],
+        'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 50, 'total' => 1],
+    ])]);
+
+    $tags = app(ApsConnect::class)->listTags();
+
+    expect($tags->items)->toHaveCount(1);
+    expect($tags->items[0]->slug)->toBe('finance');
+});
+
+it('searches the marketplace for softwares and packages', function () {
+    Http::fake(['*/api/v1/search*' => Http::response([
+        'softwares' => ['data' => [[
+            'id' => 1, 'name' => 'Corptrix', 'slug' => 'corptrix', 'tagline' => null, 'description' => null,
+            'logo_url' => null, 'banner_url' => null, 'license_type' => null, 'acquisition_mode' => 'subscription',
+            'status' => 'published', 'is_featured' => false, 'has_modules' => false, 'price_per_day_xof' => null,
+            'lifetime_price_xof' => null, 'downloads_count' => 0, 'rating_avg' => null, 'rating_count' => 0,
+        ]]],
+        'packages' => ['data' => []],
+    ])]);
+
+    $results = app(ApsConnect::class)->search('corp', 'all');
+
+    expect($results->softwares)->toHaveCount(1);
+    expect($results->softwares[0]->slug)->toBe('corptrix');
+    expect($results->packages)->toBe([]);
+
+    Http::assertSent(fn ($request) => $request['q'] === 'corp' && $request['type'] === 'all');
 });

@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Http;
 use Neocode\ApsConnect\Data\AppStationCredentials;
 use Neocode\ApsConnect\Exceptions\AppStationLicenceRejectedException;
 use Neocode\ApsConnect\Exceptions\AppStationRequestException;
+use Neocode\ApsConnect\Exceptions\AppStationResourceNotFoundException;
 use Neocode\ApsConnect\Exceptions\AppStationUnavailableException;
 use Neocode\ApsConnect\Exceptions\AppStationValidationException;
 use Neocode\ApsConnect\Exceptions\InvalidAppStationApiKeyException;
@@ -161,6 +162,47 @@ it('maps a 503 response to AppStationUnavailableException without a retry-after 
     }
 
     test()->fail('Expected AppStationUnavailableException was not thrown.');
+});
+
+it('sends the product api key when listing marketplace packages', function () {
+    Http::fake(['*' => Http::response(['data' => [], 'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 12, 'total' => 0]], 200)]);
+
+    $this->client->listPackages(['software_id' => 1]);
+
+    Http::assertSent(function ($request) {
+        return $request->url() === "{$this->baseUrl}/api/v1/packages?software_id=1"
+            && $request->hasHeader('X-Software-Api-Key', 'product-key');
+    });
+});
+
+it('maps a 404 response from a package lookup to AppStationResourceNotFoundException, not PackageReleaseNotFoundException', function () {
+    Http::fake(['*' => Http::response(['message' => 'Package introuvable.'], 404)]);
+
+    try {
+        $this->client->showPackage('corptrix', 'missing');
+    } catch (AppStationResourceNotFoundException $e) {
+        expect($e->getMessage())->toBe('Package introuvable.');
+        expect($e)->not->toBeInstanceOf(PackageReleaseNotFoundException::class);
+
+        return;
+    }
+
+    test()->fail('Expected AppStationResourceNotFoundException was not thrown.');
+});
+
+it('still maps a 404 from downloadPackage to PackageReleaseNotFoundException, unaffected by the catalogue not-found override', function () {
+    Http::fake(['*' => Http::response(['message' => 'Release introuvable.'], 404)]);
+
+    expect(fn () => $this->client->downloadPackage('instance-key', 1))
+        ->toThrow(PackageReleaseNotFoundException::class, 'Release introuvable.');
+});
+
+it('requests categories without pagination params', function () {
+    Http::fake(['*' => Http::response(['data' => []], 200)]);
+
+    $this->client->categories();
+
+    Http::assertSent(fn ($request) => $request->url() === "{$this->baseUrl}/api/v1/categories");
 });
 
 it('maps any other error status to the generic AppStationRequestException', function () {

@@ -10,6 +10,7 @@ use Illuminate\Http\Client\Response;
 use Neocode\ApsConnect\Data\AppStationCredentials;
 use Neocode\ApsConnect\Exceptions\AppStationLicenceRejectedException;
 use Neocode\ApsConnect\Exceptions\AppStationRequestException;
+use Neocode\ApsConnect\Exceptions\AppStationResourceNotFoundException;
 use Neocode\ApsConnect\Exceptions\AppStationUnavailableException;
 use Neocode\ApsConnect\Exceptions\AppStationValidationException;
 use Neocode\ApsConnect\Exceptions\InvalidAppStationApiKeyException;
@@ -71,6 +72,91 @@ final class AppStationClient
         );
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    public function softwareReleases(string $slug, int $page = 1): array
+    {
+        return $this->handle(
+            $this->request($this->credentials->apiKey)->get(self::API_PREFIX."softwares/{$slug}/releases", ['page' => $page]),
+            AppStationResourceNotFoundException::class,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function softwarePackages(string $slug, int $page = 1): array
+    {
+        return $this->handle(
+            $this->request($this->credentials->apiKey)->get(self::API_PREFIX."softwares/{$slug}/packages", ['page' => $page]),
+            AppStationResourceNotFoundException::class,
+        );
+    }
+
+    /**
+     * @param  array{software_id?: int, page?: int}  $filters
+     * @return array<string, mixed>
+     */
+    public function listPackages(array $filters = []): array
+    {
+        return $this->handle(
+            $this->request($this->credentials->apiKey)->get(self::API_PREFIX.'packages', $filters),
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function showPackage(string $softwareSlug, string $slug): array
+    {
+        return $this->handle(
+            $this->request($this->credentials->apiKey)->get(self::API_PREFIX."packages/{$softwareSlug}/{$slug}"),
+            AppStationResourceNotFoundException::class,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function packageReleases(string $softwareSlug, string $slug, int $page = 1): array
+    {
+        return $this->handle(
+            $this->request($this->credentials->apiKey)->get(self::API_PREFIX."packages/{$softwareSlug}/{$slug}/releases", ['page' => $page]),
+            AppStationResourceNotFoundException::class,
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function categories(): array
+    {
+        return $this->handle(
+            $this->request($this->credentials->apiKey)->get(self::API_PREFIX.'categories'),
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function tags(int $page = 1): array
+    {
+        return $this->handle(
+            $this->request($this->credentials->apiKey)->get(self::API_PREFIX.'tags', ['page' => $page]),
+        );
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    public function search(string $query, string $type = 'software'): array
+    {
+        return $this->handle(
+            $this->request($this->credentials->apiKey)->get(self::API_PREFIX.'search', ['q' => $query, 'type' => $type]),
+        );
+    }
+
     private function request(string $apiKey): PendingRequest
     {
         return $this->http
@@ -80,9 +166,10 @@ final class AppStationClient
     }
 
     /**
+     * @param  class-string<AppStationRequestException>  $notFoundException
      * @return array<string, mixed>
      */
-    private function handle(Response $response): array
+    private function handle(Response $response, string $notFoundException = PackageReleaseNotFoundException::class): array
     {
         $body = $response->json();
         $body = is_array($body) ? $body : [];
@@ -96,7 +183,7 @@ final class AppStationClient
         throw match ($response->status()) {
             401 => new InvalidAppStationApiKeyException($message, $response->status(), $body),
             403 => new AppStationLicenceRejectedException($message, $response->status(), $body),
-            404 => new PackageReleaseNotFoundException($message, $response->status(), $body),
+            404 => new $notFoundException($message, $response->status(), $body),
             422 => new AppStationValidationException($message, $response->status(), $body, $body['errors'] ?? []),
             429, 503 => new AppStationUnavailableException($message, $response->status(), $body, $this->retryAfter($response)),
             default => new AppStationRequestException($message, $response->status(), $body),

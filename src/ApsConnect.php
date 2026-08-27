@@ -4,16 +4,23 @@ declare(strict_types=1);
 
 namespace Neocode\ApsConnect;
 
+use Neocode\ApsConnect\Data\Category;
 use Neocode\ApsConnect\Data\LicenceStatus;
 use Neocode\ApsConnect\Data\ModuleTrialIssued;
 use Neocode\ApsConnect\Data\ModuleVerification;
+use Neocode\ApsConnect\Data\Package;
 use Neocode\ApsConnect\Data\PackageDownload;
+use Neocode\ApsConnect\Data\PackageRelease;
+use Neocode\ApsConnect\Data\Paginated;
+use Neocode\ApsConnect\Data\SearchResults;
 use Neocode\ApsConnect\Data\SoftwareIdentity;
 use Neocode\ApsConnect\Data\SoftwareInstanceRegistration;
+use Neocode\ApsConnect\Data\SoftwareRelease;
 use Neocode\ApsConnect\Data\StandaloneModuleActivation;
 use Neocode\ApsConnect\Data\StandaloneModuleAttachment;
 use Neocode\ApsConnect\Data\StandaloneModuleLicence;
 use Neocode\ApsConnect\Data\SubscriptionResult;
+use Neocode\ApsConnect\Data\Tag;
 use Neocode\ApsConnect\Data\TrialIssued;
 use Neocode\ApsConnect\Data\UpdateCheckResult;
 use Neocode\ApsConnect\Http\AppStationClient;
@@ -147,5 +154,64 @@ final class ApsConnect
         return UpdateCheckResult::fromArray(
             $this->appStation->checkForUpdate($instanceApiKey, $currentVersion, $platform, $channel),
         );
+    }
+
+    /**
+     * @return Paginated<SoftwareRelease>
+     */
+    public function getSoftwareReleases(string $slug, int $page = 1): Paginated
+    {
+        return Paginated::fromArray($this->appStation->softwareReleases($slug, $page), SoftwareRelease::fromArray(...));
+    }
+
+    /**
+     * @return Paginated<Package>
+     */
+    public function getSoftwarePackages(string $slug, int $page = 1): Paginated
+    {
+        return Paginated::fromArray($this->appStation->softwarePackages($slug, $page), Package::fromArray(...));
+    }
+
+    /**
+     * @param  array{software_id?: int, page?: int}  $filters
+     * @return Paginated<Package>
+     */
+    public function listPackages(array $filters = []): Paginated
+    {
+        return Paginated::fromArray($this->appStation->listPackages($filters), Package::fromArray(...));
+    }
+
+    public function getPackage(string $softwareSlug, string $slug): Package
+    {
+        return Package::fromArray($this->appStation->showPackage($softwareSlug, $slug));
+    }
+
+    /**
+     * @return Paginated<PackageRelease>
+     */
+    public function getPackageReleases(string $softwareSlug, string $slug, int $page = 1): Paginated
+    {
+        return Paginated::fromArray($this->appStation->packageReleases($softwareSlug, $slug, $page), PackageRelease::fromArray(...));
+    }
+
+    /**
+     * @return Category[]
+     */
+    public function listCategories(): array
+    {
+        return array_map(Category::fromArray(...), $this->appStation->categories()['data'] ?? []);
+    }
+
+    /**
+     * @return Paginated<Tag>
+     */
+    public function listTags(int $page = 1): Paginated
+    {
+        return Paginated::fromArray($this->appStation->tags($page), Tag::fromArray(...));
+    }
+
+    public function search(string $query, string $type = 'software'): SearchResults
+    {
+        return SearchResults::fromArray($this->appStation->search($query, $type));
     }
 }

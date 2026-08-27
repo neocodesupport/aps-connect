@@ -102,6 +102,30 @@ if ($update->updateAvailable) {
 }
 ```
 
+Marketplace catalogue (App Station) — public, unauthenticated reads scoped to
+*this* software's own packages and releases; safe to call anywhere, including
+outside a licensed context. There is no "list every software" or "get an
+arbitrary software" method — your integration already knows which software
+it is:
+
+```php
+$releases = ApsConnect::getSoftwareReleases($slug);
+$packages = ApsConnect::getSoftwarePackages($slug);
+$otherPackages = ApsConnect::listPackages(['software_id' => $softwareId]);
+$package = ApsConnect::getPackage($softwareSlug, $packageSlug);
+$releases = ApsConnect::getPackageReleases($softwareSlug, $packageSlug);
+$categories = ApsConnect::listCategories(); // Category[], nested `children`, not paginated
+$tags = ApsConnect::listTags();
+$results = ApsConnect::search($query, type: 'all'); // 'software' | 'package' | 'all'
+
+// listSoftwares/getSoftwareReleases/getSoftwarePackages/listPackages/
+// getPackageReleases/listTags all return a Paginated: ->items, ->currentPage,
+// ->lastPage, ->perPage, ->total. Pass ['page' => N] / $page again yourself.
+foreach ($softwares->items as $item) {
+    // $item is a Software DTO
+}
+```
+
 ### 4. Catch the right exception hierarchy
 
 Registra calls (`verifyLicence`, `subscribe`, `me`, ...) throw subclasses of
@@ -111,13 +135,15 @@ Registra calls (`verifyLicence`, `subscribe`, `me`, ...) throw subclasses of
 `RegistraValidationException` (422, has `$errors`), `RegistraUnavailableException`
 (429/503, has `$retryAfter`).
 
-App Station calls (`registerSoftwareInstance`, `downloadPackage`, `checkForUpdate`)
-throw a **separate** hierarchy under
+App Station calls (`registerSoftwareInstance`, `downloadPackage`, `checkForUpdate`,
+and the marketplace catalogue methods) throw a **separate** hierarchy under
 `Neocode\ApsConnect\Exceptions\AppStationRequestException`:
 `InvalidAppStationApiKeyException` (401), `AppStationLicenceRejectedException` (403),
-`PackageReleaseNotFoundException` (404), `AppStationValidationException` (422, has
-`$errors`), `AppStationUnavailableException` (429/503, has `$retryAfter`). Do not
-expect a Registra exception class from an App Station call, or vice versa.
+`PackageReleaseNotFoundException` (404, from `downloadPackage`),
+`AppStationResourceNotFoundException` (404, from an unknown slug in the catalogue
+methods), `AppStationValidationException` (422, has `$errors`),
+`AppStationUnavailableException` (429/503, has `$retryAfter`). Do not expect a
+Registra exception class from an App Station call, or vice versa.
 
 ### 5. Diagnose the connection
 
@@ -151,6 +177,9 @@ Read before executing:
   install (passing a persisted device UUID as `$clientReference`), stores the
   returned `apiKey` in its own local storage, then calls `ApsConnect::checkForUpdate()`
   on startup and `ApsConnect::downloadPackage()` when the user accepts an update.
+- An in-app "browse add-ons" screen calls `ApsConnect::getSoftwarePackages($slug)`
+  and `ApsConnect::search($query)` directly — no licence, instance, or API key
+  gating needed, since the catalogue is public.
 
 ## Anti-patterns
 
