@@ -20,6 +20,54 @@ through a single `ApsConnect` facade. The package never persists anything
 itself — you store the API keys and results it returns in your own
 application.
 
+## Table of contents
+
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [How it works](#how-it-works)
+- [Configuration](#configuration)
+  - [`appstation.conf.json`](#appstationconfjson)
+  - [`appstation.conf.local.json`](#appstationconflocaljson)
+  - [`config/aps-connect.php`](#configaps-connectphp)
+  - [Environment & sandbox routing](#environment--sandbox-routing)
+- [Licensing (Registra)](#licensing-registra)
+  - [`verifyLicence()`](#verifylicencestring-licencekey-licencestatus)
+  - [`verifyModuleLicence()`](#verifymodulelicencestring-licencekey-string-moduleslug-moduleverification)
+  - [`subscribe()`](#subscribestring-licencekey-array-customer-array-device--subscriptionresult)
+  - [`issueTrial()`](#issuetrialarray-customer-trialissued)
+  - [`issueModuleTrial()`](#issuemoduletrialstring-moduleslug-array-customer-moduletrialissued)
+  - [`verifyStandaloneModuleLicence()`](#verifystandalonemodulelicencestring-modulelicencekey-standalonemodulelicence)
+  - [`activateStandaloneModuleLicence()`](#activatestandalonemodulelicencestring-modulelicencekey-array-customer-standalonemoduleactivation)
+  - [`attachStandaloneModuleLicence()`](#attachstandalonemodulelicencestring-modulelicencekey-string-motherlicencekey-standalonemoduleattachment)
+  - [`lookupByCustomerDevice()`](#lookupbycustomerdevicestring-email-string-deviceuuid-subscriptionresult)
+  - [`me()`](#me-softwareidentity)
+- [Distribution & auto-update (App Station)](#distribution--auto-update-app-station)
+  - [`registerSoftwareInstance()`](#registersoftwareinstancestring-licencekey-string-clientreference-string-label--softwareinstanceregistration)
+  - [`downloadPackage()`](#downloadpackagestring-instanceapikey-int-packagereleaseid-string-modulelicencekey--packagedownload)
+  - [`checkForUpdate()`](#checkforupdatestring-instanceapikey-string-currentversion-string-platform-string-channel--updatecheckresult)
+  - [A complete distribution flow](#a-complete-distribution-flow)
+- [Exception handling](#exception-handling)
+  - [Registra exceptions](#registra-exceptions)
+  - [App Station exceptions](#app-station-exceptions)
+  - [Credential resolution errors](#credential-resolution-errors)
+- [The `aps-connect:doctor` command](#the-aps-connectdoctor-command)
+- [Testing your integration](#testing-your-integration)
+- [Data Transfer Objects reference](#data-transfer-objects-reference)
+- [Design notes & anti-patterns](#design-notes--anti-patterns)
+- [Changelog](#changelog)
+- [Contributing](#contributing)
+- [Security Vulnerabilities](#security-vulnerabilities)
+- [Credits](#credits)
+- [License](#license)
+
+## Requirements
+
+- PHP `^8.3`
+- Laravel `illuminate/support` `^12.0` or `^13.0`
+- An `appstation.conf.json` (and, in development, an `appstation.conf.local.json`)
+  file at your application's root, written by the `aps` CLI (`aps init` / `aps
+  promote`) — Aps Connect reads these, it does not write them.
+
 ## Installation
 
 You can install the package via Composer:
@@ -35,63 +83,712 @@ php artisan vendor:publish --tag="aps-connect-config"
 ```
 
 This is optional — the package works out of the box with sane defaults. Publish it
-only if you need to override the Registra API key resolution (see [Configuration](#configuration)
-below).
+only if you need to override the Registra API key resolution (see
+[Configuration](#configuration) below). There are no migrations, views,
+translations, or public assets to publish: the package is a pure HTTP client, it
+never touches your database or your frontend.
+
+## How it works
+
+Aps Connect wraps two distinct external services behind one facade:
+
+| Service | Purpose | Client class | Auth header value |
+|---|---|---|---|
+| **Registra** | Licence issuance & verification | `RegistraClient` | Your software's product API key |
+| **App Station** | Marketplace distribution & auto-update | `AppStationClient` | The product key for `registerSoftwareInstance()`; a per-instance key (returned by `registerSoftwareInstance()`) for `downloadPackage()`/`checkForUpdate()` |
+
+Both send the same `X-Software-Api-Key` header, and — this is a load-bearing
+detail — **the exact same product API key authenticates both Registra calls and
+App Station's `registerSoftwareInstance()` call**. App Station's own accepted
+keys are synced from Registra, so there is nothing extra to generate or
+configure for App Station on the product-key side.
+
+**The package is entirely stateless.** It never writes to a database, cache, or
+disk. Every method call is a single outbound HTTP request, and every response is
+converted into a readonly, typed Data Transfer Object. Two consequences follow:
+
+1. Any state you need across requests — the current licence status, a customer's
+   App Station instance API key, a "last seen" timestamp — is yours to persist,
+   in whatever shape fits your application (a column on your `User`/`Tenant`
+   model, a dedicated table, a cache entry — Aps Connect has no opinion).
+2. `registerSoftwareInstance()` is not implicitly memoized. Call it once per
+   tenant/device with a stable `$clientReference` and store what it returns; do
+   not call it on every request or every boot (see
+   [`registerSoftwareInstance()`](#registersoftwareinstancestring-licencekey-string-clientreference-string-label--softwareinstanceregistration)
+   for why).
 
 ## Configuration
 
-Aps Connect resolves almost everything from an `appstation.conf.json` file at your
-application's root — written by the `aps` CLI (`aps init`), not by hand:
+### `appstation.conf.json`
+
+This file lives at your application's root (next to `composer.json`) and is
+written by the `aps` CLI, not by hand. Aps Connect reads it through
+`Neocode\ApsConnect\Support\ProjectConfigReader`:
 
 ```json
 {
+  "$schema": "https://appstation.dev/schemas/appstation.conf.v1.json",
+  "version": 1,
+  "type": "software",
   "environment": "production",
+  "software": { "token": "53b5e626-4d7a-4a8b-8fbd-8db698b520e4", "name": "YourSoftware" },
   "api": { "baseUrl": "https://registra.example.com/api" },
-  "appstation": { "baseUrl": "https://app-station.example.com" }
+  "auth": { "apiKeySource": "env", "apiKeyEnvVar": "REGISTRA_API_KEY" },
+  "appstation": { "baseUrl": "https://app-station.example.com", "softwareId": 2 }
 }
 ```
 
-- `environment` and both base urls are read from this file. `api.baseUrl` and
-  `appstation.baseUrl` fall back to `config('aps-connect.registra_base_url')` /
-  `config('aps-connect.appstation_base_url')` (Registra's / App Station's real
-  production addresses) when the file omits them, but an explicit value in the file
-  always wins — neither is configurable through an environment variable, since that
-  would let a deployer silently redirect licence checks to their own server.
-- The Registra API key is the one value that also reads from Laravel config/env:
-  `config('aps-connect.api_key')` / `REGISTRA_API_KEY` for production, or
-  `config('aps-connect.dev_api_key')` / `REGISTRA_DEV_API_KEY` for the development
-  environment declared in `appstation.conf.json`. It is also read from the
-  gitignored `appstation.conf.local.json` (written by `aps init`) when no config/env
-  value is set. This same key authenticates both Registra calls and App Station's
-  `instances/register` call — there is nothing else to configure for App Station.
+Aps Connect only reads three of these keys — `environment`, `api.baseUrl`, and
+`appstation.baseUrl` — everything else in the file exists for the `aps` CLI's own
+bookkeeping and is ignored here.
 
-Run `php artisan aps-connect:doctor` at any time to confirm the Registra API key is
-accepted and see the resolved App Station configuration.
+| Key | Read by | Behaviour |
+|---|---|---|
+| `environment` | `ProjectConfigReader::credentials()` | `"development"` or `"production"` (or absent). **No config/env fallback at all** — a missing file or key always means `"production"`. This is deliberate: letting an env var flip the environment would let a deployer route real licence checks through Registra's permissive sandbox. |
+| `api.baseUrl` | `ProjectConfigReader::credentials()` | Registra's base URL, **including** the trailing `/api` (e.g. `https://registra.neocode.ci/api`). If absent, falls back to `config('aps-connect.registra_base_url')` — but an explicit value here always wins over that fallback. |
+| `appstation.baseUrl` | `ProjectConfigReader::appStationCredentials()` | App Station's **bare domain**, with **no** `/api/v1` suffix (e.g. `https://app-station.neocode.ci`) — `AppStationClient` adds that prefix to every request path itself. If absent, falls back to `config('aps-connect.appstation_base_url')`, same "file always wins" rule. |
 
-## Usage
+Both base urls are trust anchors, not mere defaults: which server every licence
+check, registration, download, or update check is sent to determines whether
+those checks mean anything. That's why neither one is ever configurable through
+an environment variable — only through this versioned, publisher-controlled
+file, or the non-`env()` literal fallback described below.
+
+> [!NOTE]
+> `type` is `"software"` (a standalone application) or `"module"` (an App
+> Station package tied to a parent application) — `aps init --type module`
+> writes a differently-shaped file (`module`/`parentSoftware` instead of
+> `software`, `appstation.packageId`/`parentSoftwareId` instead of
+> `appstation.softwareId`). Aps Connect doesn't care either way: `environment`,
+> `api.baseUrl`, and `appstation.baseUrl` exist under the same names in both
+> shapes, so credential resolution is identical. The one thing worth knowing if
+> you're integrating from a module's codebase: **the resolved API key is always
+> the parent software's**, not the module's own — the module has no API key of
+> its own. Use `verifyModuleLicence()`/`verifyStandaloneModuleLicence()` for the
+> module-scoped licence checks; they still authenticate with that same parent
+> key.
+
+### `appstation.conf.local.json`
+
+A **gitignored** sibling file, also written by `aps init`, holding your local
+development API key (and a `signingSecret` used by the `aps` CLI's own
+`sign`/`verify` commands — Aps Connect never reads it):
+
+```json
+{
+  "auth": { "apiKey": "your-dev-api-key" },
+  "signingSecret": "hmac-secret-for-aps-sign-and-aps-verify"
+}
+```
+
+`ProjectConfigReader::credentials()` reads `auth.apiKey` from this file only as
+a last resort, after `config('aps-connect.api_key')` /
+`config('aps-connect.dev_api_key')` — see the precedence table in the next
+section.
+
+### `config/aps-connect.php`
+
+Publish this file (`php artisan vendor:publish --tag="aps-connect-config"`) only
+if you need to change one of these four values:
+
+| Config key | Env var | Default | Purpose |
+|---|---|---|---|
+| `api_key` | `REGISTRA_API_KEY` | `null` | Product API key used when `environment` is `"production"`. |
+| `dev_api_key` | `REGISTRA_DEV_API_KEY` | `null` | Product API key used when `environment` is `"development"`. |
+| `registra_base_url` | — (no env override) | `https://registra.neocode.ci/api` | Fallback for `api.baseUrl` when `appstation.conf.json` doesn't set it. |
+| `appstation_base_url` | — (no env override) | `https://app-station.neocode.ci` | Fallback for `appstation.baseUrl` when `appstation.conf.json` doesn't set it. |
+
+**API key resolution order** (computed once, per request, by
+`ProjectConfigReader::credentials()`):
+
+1. `config('aps-connect.api_key')` (production) or `config('aps-connect.dev_api_key')`
+   (development), depending on `environment` in `appstation.conf.json`.
+2. If that config value is `null`/empty: `auth.apiKey` from
+   `appstation.conf.local.json`.
+3. If neither resolves to a non-empty string: `MissingCredentialsException` is
+   thrown.
+
+The API key is the *one* value that is allowed a config/env override, precisely
+because `appstation.conf.local.json` is gitignored — it simply won't exist in
+most CI/CD pipelines or fresh deployments, so an env var is the only realistic
+way to deliver it there. A wrong or forged key is simply rejected by Registra;
+there's nothing to gain by overriding it, unlike the base urls above.
+
+**Base url resolution order** (for both `registra_base_url` and
+`appstation_base_url`):
+
+1. The explicit value in `appstation.conf.json` (`api.baseUrl` /
+   `appstation.baseUrl`), if present and non-empty.
+2. Otherwise, the literal default in `config/aps-connect.php` — note these two
+   are **not** wrapped in `env()`, unlike the API keys above. Both point at the
+   one real, shared production instance of each service, so there is nothing
+   to gain from letting a deployer's `.env` redirect them.
+3. If neither resolves: `MissingCredentialsException` is thrown (Registra) — App
+   Station's fallback is a hardcoded literal, so this only happens if you
+   explicitly set `config(['aps-connect.appstation_base_url' => null])`
+   yourself.
+
+### Environment & sandbox routing
+
+`environment` in `appstation.conf.json` controls two things:
+
+1. **Which API key** is used (`api_key` vs `dev_api_key` — see above).
+2. **Sandbox routing** for a subset of Registra endpoints. `RegistraClient`
+   marks certain calls as `sandboxable: true` (`verifyLicence()`,
+   `verifyModuleLicence()`, `subscribe()`). When `environment` is
+   `"development"`, those calls are transparently prefixed with `sandbox/`
+   (e.g. `POST sandbox/licences/verify` instead of `POST licences/verify`).
+   Registra's sandbox accepts reserved dev licence keys without checking real
+   data. Every other method (`issueTrial()`, `issueModuleTrial()`,
+   `verifyStandaloneModuleLicence()`, `activateStandaloneModuleLicence()`,
+   `attachStandaloneModuleLicence()`, `lookupByCustomerDevice()`, `me()`, and
+   all three App Station methods) always hits the real endpoint, in both
+   environments — there is no sandbox equivalent for them.
+
+## Licensing (Registra)
+
+Use the `ApsConnect` facade (`Neocode\ApsConnect\Facades\ApsConnect`) or inject
+`Neocode\ApsConnect\ApsConnect` — both resolve the same singleton.
+
+### `verifyLicence(string $licenceKey): LicenceStatus`
+
+Checks whether a licence key is active. Sandboxable.
 
 ```php
 use Neocode\ApsConnect\Facades\ApsConnect;
+use Neocode\ApsConnect\Exceptions\LicenceNotFoundException;
+use Neocode\ApsConnect\Exceptions\LicenceInactiveException;
 
-// Licensing (Registra)
-$status = ApsConnect::verifyLicence($licenceKey);
-$result = ApsConnect::subscribe($licenceKey, ['email' => $email]);
-$trial = ApsConnect::issueTrial(['email' => $email]);
+try {
+    $status = ApsConnect::verifyLicence($licenceKey);
+} catch (LicenceNotFoundException) {
+    abort(404, 'Unknown licence key.');
+} catch (LicenceInactiveException $e) {
+    abort(403, $e->getMessage());
+}
 
-// Distribution / auto-update (App Station), once a customer has an active licence.
-// Always pass a stable $clientReference (tenant id, device id...): App Station uses
-// it as the idempotency key, so reusing it returns the existing instance/key
-// instead of creating a new one on every call.
-$registration = ApsConnect::registerSoftwareInstance($licenceKey, $clientReference);
+if (! $status->active) {
+    // $status->reason explains why (e.g. "expired", "suspended")
+}
 
-// Persist $registration->apiKey yourself (the package is stateless), then:
-$download = ApsConnect::downloadPackage($registration->apiKey, $packageReleaseId);
-$update = ApsConnect::checkForUpdate($registration->apiKey, $currentVersion);
+report_usage_dashboard($status->remainingDays, $status->modules);
 ```
 
-See the bundled Boost skill at
-[`resources/boost/skills/aps-connect-development/SKILL.md`](resources/boost/skills/aps-connect-development/SKILL.md)
-for the full method list, the exception hierarchy to catch, and more examples.
+Returns a [`LicenceStatus`](#licencestatus): `licenceKey`, `active`,
+`statusActive`, `notExpired`, `reason`, `status`, `expiresAt`, `remainingDays`,
+`modules` (a `list<ModuleEntitlement>`), `message`.
+
+### `verifyModuleLicence(string $licenceKey, string $moduleSlug): ModuleVerification`
+
+Checks whether a specific module is entitled under a mother licence. Sandboxable.
+
+```php
+$verification = ApsConnect::verifyModuleLicence($licenceKey, 'reports');
+
+if ($verification->module->active) {
+    enable_reports_module();
+}
+```
+
+Returns a [`ModuleVerification`](#moduleverification): `licenceKey`,
+`moduleSlug`, `mother` (a full `LicenceStatus` for the mother licence),
+`module` (a `ModuleEntitlement`), `message`.
+
+### `subscribe(string $licenceKey, array $customer, array $device = []): SubscriptionResult`
+
+Claims a licence for a specific customer (and optionally a device), typically
+right after a purchase or at first activation. Sandboxable.
+
+```php
+$result = ApsConnect::subscribe(
+    $licenceKey,
+    customer: [
+        'email' => $user->email,
+        'firstname' => $user->first_name,
+        'lastname' => $user->last_name,
+    ],
+    device: [
+        'uuid' => $deviceUuid,
+        'type' => 'desktop',
+        'os' => php_uname('s'),
+    ],
+);
+
+$user->update(['registra_customer_id' => $result->customer?->id]);
+```
+
+- `$customer` accepts `firstname`, `lastname`, `email` (required), `phone`,
+  `address`, `software_key`.
+- `$device` accepts `uuid`, `type`, `name`, `os`, `browser`; omit it entirely
+  (default `[]`) for a customer-only claim — the `device` field is then not
+  sent at all, rather than sent as `null`.
+
+Returns a [`SubscriptionResult`](#subscriptionresult): `licence` (a full
+`LicenceStatus`), `usagePeriod`, `customer`, `device`.
+
+### `issueTrial(array $customer): TrialIssued`
+
+Issues a fresh trial licence for a customer. Always hits the real endpoint (no
+sandbox mirror), so a "trial" issued in development is a real Registra trial —
+don't call it from a test/CI environment against production Registra.
+
+```php
+$trial = ApsConnect::issueTrial(['email' => $lead->email]);
+
+Mail::to($lead)->send(new TrialLicenceIssued($trial->licenceKey, $trial->mustActivateBeforeAt));
+```
+
+Returns a [`TrialIssued`](#trialissued): `licenceKey`, `trialPeriodDays`,
+`mustActivateBeforeAt`, `usagePeriod`, `customerEmail`, `message`.
+
+### `issueModuleTrial(string $moduleSlug, array $customer): ModuleTrialIssued`
+
+Same idea, scoped to a single module rather than the whole software.
+
+```php
+$trial = ApsConnect::issueModuleTrial('reports', ['email' => $lead->email]);
+```
+
+Returns a [`ModuleTrialIssued`](#moduletrialissued): `moduleLicenceKey`,
+`moduleSlug`, `trialPeriodDays`, `usagePeriod`, `customerEmail`, `message`.
+
+### `verifyStandaloneModuleLicence(string $moduleLicenceKey): StandaloneModuleLicence`
+
+Checks a module licence that was purchased independently of any mother
+licence (before it's necessarily attached to one).
+
+```php
+$licence = ApsConnect::verifyStandaloneModuleLicence($moduleLicenceKey);
+
+if ($licence->status === 'pending_attachment') {
+    prompt_user_to_attach($licence->moduleLicenceKey);
+}
+```
+
+Returns a [`StandaloneModuleLicence`](#standalonemodulelicence):
+`moduleLicenceKey`, `moduleSlug`, `status`, `active`, `attached`,
+`motherLicenceKey`, `reason`, `expiresAt`, `message`.
+
+### `activateStandaloneModuleLicence(string $moduleLicenceKey, array $customer): StandaloneModuleActivation`
+
+Activates a standalone module licence for a customer.
+
+```php
+$activation = ApsConnect::activateStandaloneModuleLicence($moduleLicenceKey, [
+    'email' => $user->email,
+]);
+
+if (! $activation->already) {
+    notify_new_module_activation($activation);
+}
+```
+
+Returns a [`StandaloneModuleActivation`](#standalonemoduleactivation):
+`moduleLicenceKey`, `status`, `expiresAt`, `usagePeriod`, `customer`,
+`already` (true if it was already active — this call is idempotent), `message`.
+
+### `attachStandaloneModuleLicence(string $moduleLicenceKey, string $motherLicenceKey): StandaloneModuleAttachment`
+
+Attaches a standalone module licence to a mother licence.
+
+```php
+$attachment = ApsConnect::attachStandaloneModuleLicence($moduleLicenceKey, $motherLicenceKey);
+
+foreach ($attachment->modules as $module) {
+    // $module is a ModuleEntitlement — the mother licence's full module list post-attachment
+}
+```
+
+Returns a [`StandaloneModuleAttachment`](#standalonemoduleattachment):
+`motherLicenceKey`, `modules` (a `list<ModuleEntitlement>`), `message`.
+
+### `lookupByCustomerDevice(string $email, string $deviceUuid): SubscriptionResult`
+
+Finds an existing subscription by customer email + device UUID — useful for
+"restore my licence on this device" flows.
+
+```php
+try {
+    $result = ApsConnect::lookupByCustomerDevice($user->email, $deviceUuid);
+} catch (\Neocode\ApsConnect\Exceptions\LicenceNotFoundException) {
+    // No subscription for this email/device pair.
+}
+```
+
+Returns the same [`SubscriptionResult`](#subscriptionresult) shape as
+`subscribe()`.
+
+### `me(): SoftwareIdentity`
+
+Returns identity/metadata about the software the configured API key belongs to
+— this is what `aps-connect:doctor` uses as its connectivity probe.
+
+```php
+$identity = ApsConnect::me();
+
+Log::info("Connected to Registra as {$identity->name} ({$identity->environment})");
+```
+
+Returns a [`SoftwareIdentity`](#softwareidentity): `token`, `key`, `name`,
+`slug`, `environment`, `hasModules`, `hasApiKey`, `apiKeyFingerprint`,
+`linkedProductionToken`, `hasPreviousApiKeyGracePeriod`,
+`apiKeyPreviousExpiresAt`. Check `hasPreviousApiKeyGracePeriod` after rotating
+your API key: while true, the previous key is still accepted until
+`apiKeyPreviousExpiresAt`.
+
+## Distribution & auto-update (App Station)
+
+This is a separate system from licensing: it lets a **specific deployment** of
+your software at a customer's site (a "SoftwareInstance") download package
+releases and check for updates, gated by its own per-instance API key rather
+than the product key.
+
+### `registerSoftwareInstance(string $licenceKey, string $clientReference, ?string $label = null): SoftwareInstanceRegistration`
+
+Registers (or resolves, if already registered) a deployment of your software
+tied to a verified `$licenceKey`.
+
+```php
+$registration = ApsConnect::registerSoftwareInstance(
+    licenceKey: $tenant->registra_licence_key,
+    clientReference: (string) $tenant->id, // <-- see below
+    label: "{$tenant->name} — production",
+);
+
+$tenant->update([
+    'app_station_instance_id' => $registration->instance->id,
+    'app_station_instance_api_key' => encrypt($registration->apiKey),
+]);
+```
+
+> [!IMPORTANT]
+> **`$clientReference` is App Station's idempotency key.** Pass a stable
+> identifier — a tenant id, a device UUID, a machine fingerprint — that is the
+> same every time you call this method for the *same* deployment. Reusing it
+> returns the *existing* instance and its *existing* API key. Omitting a stable
+> value (or passing a fresh one every call, e.g. `Str::uuid()`) creates a
+> **brand-new** App Station instance and a **brand-new** API key on every
+> single call — orphaning instances server-side. This is why `$clientReference`
+> is a required parameter here, unlike App Station's own underlying API where
+> it's optional.
+
+Returns a [`SoftwareInstanceRegistration`](#softwareinstanceregistration):
+`instance` (a `SoftwareInstance`) and `apiKey` (the instance's API key — **the
+package does not store this for you**; persist it yourself, e.g. encrypted on
+your tenant model, since it authenticates every subsequent
+`downloadPackage()`/`checkForUpdate()` call for this deployment).
+
+### `downloadPackage(string $instanceApiKey, int $packageReleaseId, ?string $moduleLicenceKey = null): PackageDownload`
+
+Requests a signed, time-limited download URL for a package release, using the
+instance API key returned by `registerSoftwareInstance()`.
+
+```php
+$download = ApsConnect::downloadPackage(
+    instanceApiKey: decrypt($tenant->app_station_instance_api_key),
+    packageReleaseId: $release->id,
+    moduleLicenceKey: $moduleLicenceKey, // required only for modules not included in the base licence
+);
+
+return redirect($download->url); // expires at $download->expiresAt
+```
+
+Returns a [`PackageDownload`](#packagedownload): `url`, `expiresAt`, `checksum`
+— verify the downloaded file against `checksum` before installing it.
+
+### `checkForUpdate(string $instanceApiKey, string $currentVersion, ?string $platform = null, ?string $channel = null): UpdateCheckResult`
+
+Checks whether a newer release exists for this instance's software. Unlike
+`registerSoftwareInstance()`/`downloadPackage()`, this call has **no licence
+gate at all** — any active instance can check for updates regardless of licence
+state, so it's safe to call unconditionally on every app startup.
+
+```php
+$update = ApsConnect::checkForUpdate(
+    instanceApiKey: decrypt($tenant->app_station_instance_api_key),
+    currentVersion: config('app.version'),
+    platform: 'windows', // one of: windows, macos, linux, android, ios, universal
+    channel: 'stable',   // one of: stable, beta, rc, nightly — defaults to stable server-side
+);
+
+if ($update->updateAvailable) {
+    notify_user_update_available($update->latestVersion, $update->url, $update->checksum, $update->signature);
+}
+```
+
+Returns an [`UpdateCheckResult`](#updatecheckresult`): `updateAvailable`,
+`latestVersion`. When `updateAvailable` is true, also: `release` (a full
+`SoftwareRelease`), `url`, `expiresAt`, `checksum`, `signature` (an optional
+HMAC signature of the release, when App Station is configured to sign
+releases — verify it if present before trusting the download).
+
+### A complete distribution flow
+
+Putting the three App Station methods together, end to end, for a multi-tenant
+application:
+
+```php
+use Neocode\ApsConnect\Facades\ApsConnect;
+use Neocode\ApsConnect\Exceptions\AppStationLicenceRejectedException;
+use Neocode\ApsConnect\Exceptions\InvalidAppStationApiKeyException;
+
+class SoftwareInstanceService
+{
+    public function ensureRegistered(Tenant $tenant): string
+    {
+        if ($tenant->app_station_instance_api_key !== null) {
+            return decrypt($tenant->app_station_instance_api_key);
+        }
+
+        try {
+            $registration = ApsConnect::registerSoftwareInstance(
+                licenceKey: $tenant->registra_licence_key,
+                clientReference: (string) $tenant->id,
+                label: $tenant->name,
+            );
+        } catch (AppStationLicenceRejectedException $e) {
+            throw new \RuntimeException("Tenant {$tenant->id} has no valid licence: {$e->getMessage()}");
+        }
+
+        $tenant->update([
+            'app_station_instance_id' => $registration->instance->id,
+            'app_station_instance_api_key' => encrypt($registration->apiKey),
+        ]);
+
+        return $registration->apiKey;
+    }
+
+    public function checkForUpdate(Tenant $tenant, string $currentVersion): \Neocode\ApsConnect\Data\UpdateCheckResult
+    {
+        try {
+            return ApsConnect::checkForUpdate($this->ensureRegistered($tenant), $currentVersion);
+        } catch (InvalidAppStationApiKeyException) {
+            // The stored instance key was revoked server-side — re-register.
+            $tenant->update(['app_station_instance_api_key' => null]);
+
+            return ApsConnect::checkForUpdate($this->ensureRegistered($tenant), $currentVersion);
+        }
+    }
+}
+```
+
+## Exception handling
+
+Every exception extends `Neocode\ApsConnect\Exceptions\ApsConnectException`.
+Registra and App Station each have their own hierarchy, keyed by HTTP status —
+**catching one never accidentally catches the other's failures**, since they
+authenticate against different servers for different reasons.
+
+### Registra exceptions
+
+All extend `RegistraRequestException` (`status: int`, `body: array`).
+
+| Exception | HTTP status | Extra properties | Thrown when |
+|---|---|---|---|
+| `InvalidApiKeyException` | 401 | — | The configured API key was rejected. |
+| `LicenceInactiveException` | 403 | — | The licence exists but isn't in a usable state. |
+| `LicenceNotFoundException` | 404 | — | No licence matches the given key. |
+| `LicenceConflictException` | 409 | — | E.g. a licence already claimed by another customer/device. |
+| `RegistraValidationException` | 422 | `errors: array<string, list<string>>` | The request payload failed Registra's validation. |
+| `RegistraUnavailableException` | 429 or 503 | `retryAfter: ?int` | Rate-limited or Registra is down; `retryAfter` mirrors the `Retry-After` header, when present. |
+| `RegistraRequestException` | any other status | — | Fallback for anything not mapped above. |
+
+### App Station exceptions
+
+All extend `AppStationRequestException` (`status: int`, `body: array`) — the
+same shape as `RegistraRequestException`, deliberately kept separate.
+
+| Exception | HTTP status | Extra properties | Thrown when |
+|---|---|---|---|
+| `InvalidAppStationApiKeyException` | 401 | — | The product key (`registerSoftwareInstance()`) or the instance key (`downloadPackage()`/`checkForUpdate()`) was rejected or revoked. |
+| `AppStationLicenceRejectedException` | 403 | — | The licence backing the instance/download doesn't allow it (inactive, wrong module entitlement, ...). |
+| `PackageReleaseNotFoundException` | 404 | — | `downloadPackage()` was called with an unknown `$packageReleaseId`. |
+| `AppStationValidationException` | 422 | `errors: array<string, list<string>>` | E.g. a required `moduleLicenceKey` was missing. |
+| `AppStationUnavailableException` | 429 or 503 | `retryAfter: ?int` | Rate-limited or App Station is down. |
+| `AppStationRequestException` | any other status | — | Fallback for anything not mapped above. |
+
+### Credential resolution errors
+
+`Neocode\ApsConnect\Exceptions\MissingCredentialsException` is thrown by
+`ProjectConfigReader` — before any HTTP request is even attempted — when it
+cannot resolve an API key or a base url at all (see the resolution-order tables
+in [Configuration](#configuration)). Its message always says exactly which
+value is missing and how to provide it.
+
+## The `aps-connect:doctor` command
+
+```bash
+php artisan aps-connect:doctor
+```
+
+A safe, side-effect-free diagnostic:
+
+1. Calls `me()` to confirm the configured Registra API key is accepted, and
+   prints the connected software's name and environment.
+2. Warns if a previous API key is still valid during its rotation grace
+   period.
+3. Calls `verifyLicence('APS-CONNECT-DOCTOR-PROBE')` — a key guaranteed not to
+   exist — to confirm the verification endpoint itself responds correctly
+   (`LicenceNotFoundException` is the expected, successful outcome here, not a
+   failure).
+4. Prints the resolved App Station base url.
+
+It does **not** perform a live App Station check: `registerSoftwareInstance()`
+(App Station's only endpoint authenticated with the product key) creates a real
+`SoftwareInstance` on every call, so — unlike Registra's `verifyLicence()` —
+there is no side-effect-free equivalent to probe with a throwaway value.
+
+Exit code is `0` on success, `1` if the API key is rejected at either step.
+
+## Testing your integration
+
+Aps Connect is built to be tested with `Http::fake()` — every example below
+mirrors the package's own test suite.
+
+```php
+use Illuminate\Support\Facades\Http;
+use Neocode\ApsConnect\Facades\ApsConnect;
+
+it('gates a feature behind an active licence', function () {
+    Http::fake(['*/licences/verify' => Http::response([
+        'success' => true, 'active' => true, 'status_active' => true, 'not_expired' => true,
+        'reason' => null, 'licence_key' => 'LIC-1', 'status' => 'active',
+        'expires_at' => null, 'remaining_days' => null, 'modules' => [], 'message' => null,
+    ])]);
+
+    $status = ApsConnect::verifyLicence('LIC-1');
+
+    expect($status->active)->toBeTrue();
+});
+
+it('handles a rejected instance api key by re-registering', function () {
+    Http::fake([
+        '*/integrations/software/packages/*/download' => Http::response(['message' => 'Invalid.'], 401),
+        '*/integrations/software/instances/register' => Http::response([
+            'instance' => ['id' => 1, 'label' => null, 'licence_key_mask' => '****', 'client_reference' => 'tenant-1', 'status' => 'active', 'last_seen_at' => null, 'revoked_at' => null, 'registered_at' => null],
+            'api_key' => 'new-instance-key',
+        ], 201),
+    ]);
+
+    // ... exercise your own service class here ...
+});
+```
+
+For unit tests that don't need the full container (e.g. testing
+`ProjectConfigReader` in isolation), write a temporary `appstation.conf.json` to
+an isolated directory rather than the shared Testbench skeleton — see
+`tests/Unit/Support/ProjectConfigReaderTest.php` in this repository for the
+exact pattern, including why it matters under parallel test execution.
+
+## Data Transfer Objects reference
+
+All DTOs are `final readonly` classes under `Neocode\ApsConnect\Data`, each with
+a static `fromArray()` constructor. Nested objects follow the same convention.
+
+#### `LicenceStatus`
+`licenceKey: string`, `active: bool`, `statusActive: bool`, `notExpired: bool`,
+`reason: ?string`, `status: string`, `expiresAt: ?CarbonImmutable`,
+`remainingDays: ?int`, `modules: list<ModuleEntitlement>`, `message: ?string`
+
+#### `ModuleEntitlement`
+`slug: string`, `status: string`, `active: bool`, `expiresAt: ?CarbonImmutable`,
+`remainingDays: ?int`, `reason: ?string`
+
+#### `ModuleVerification`
+`licenceKey: string`, `moduleSlug: string`, `mother: LicenceStatus`,
+`module: ModuleEntitlement`, `message: ?string`
+
+#### `SubscriptionResult`
+`licence: LicenceStatus`, `usagePeriod: ?UsagePeriod`, `customer: ?Customer`,
+`device: ?Device`
+
+#### `UsagePeriod`
+`value: int`, `unit: string`, `label: string`
+
+#### `Customer`
+`id: ?int`, `email: string`, `firstname: ?string`, `lastname: ?string`,
+`status: ?string`, `phone: ?string`, `address: ?string`, `softwareKey: ?string`
+
+#### `Device`
+`id: int`, `uuid: string`, `type: string`, `name: ?string`, `os: ?string`,
+`browser: ?string`, `lastActiveAt: ?CarbonImmutable`
+
+#### `TrialIssued`
+`licenceKey: string`, `trialPeriodDays: int`,
+`mustActivateBeforeAt: ?CarbonImmutable`, `usagePeriod: UsagePeriod`,
+`customerEmail: string`, `message: ?string`
+
+#### `ModuleTrialIssued`
+`moduleLicenceKey: string`, `moduleSlug: string`, `trialPeriodDays: int`,
+`usagePeriod: UsagePeriod`, `customerEmail: string`, `message: ?string`
+
+#### `StandaloneModuleLicence`
+`moduleLicenceKey: string`, `moduleSlug: string`, `status: string`,
+`active: bool`, `attached: bool`, `motherLicenceKey: ?string`,
+`reason: ?string`, `expiresAt: ?CarbonImmutable`, `message: ?string`
+
+#### `StandaloneModuleActivation`
+`moduleLicenceKey: string`, `status: string`, `expiresAt: ?CarbonImmutable`,
+`usagePeriod: ?UsagePeriod`, `customer: ?Customer`, `already: bool`,
+`message: ?string`
+
+#### `StandaloneModuleAttachment`
+`motherLicenceKey: string`, `modules: list<ModuleEntitlement>`,
+`message: ?string`
+
+#### `SoftwareIdentity`
+`token: string`, `key: string`, `name: string`, `slug: string`,
+`environment: string`, `hasModules: bool`, `hasApiKey: bool`,
+`apiKeyFingerprint: ?string`, `linkedProductionToken: ?string`,
+`hasPreviousApiKeyGracePeriod: bool`, `apiKeyPreviousExpiresAt: ?CarbonImmutable`
+
+#### `SoftwareInstanceRegistration`
+`instance: SoftwareInstance`, `apiKey: string`
+
+#### `SoftwareInstance`
+`id: int`, `label: ?string`, `licenceKeyMask: string`,
+`clientReference: ?string`, `status: string`, `lastSeenAt: ?CarbonImmutable`,
+`revokedAt: ?CarbonImmutable`, `registeredAt: ?CarbonImmutable`
+
+#### `PackageDownload`
+`url: string`, `expiresAt: CarbonImmutable`, `checksum: string`
+
+#### `UpdateCheckResult`
+`updateAvailable: bool`, `latestVersion: ?string`, `release: ?SoftwareRelease`,
+`url: ?string`, `expiresAt: ?CarbonImmutable`, `checksum: ?string`,
+`signature: ?string`
+
+#### `SoftwareRelease`
+`id: int`, `version: string`, `platform: ?string`, `channel: ?string`,
+`releaseNotes: ?string`, `checksum: string`, `signature: ?string`,
+`fileSize: ?int`, `isYanked: bool`, `publishedAt: ?CarbonImmutable`
+
+#### `RegistraCredentials` / `AppStationCredentials`
+Internal, resolved by `ProjectConfigReader` and injected by the service
+provider — you won't normally construct these yourself outside of tests.
+`RegistraCredentials`: `apiKey: string`, `baseUrl: string`,
+`environment: string`. `AppStationCredentials`: `apiKey: string`,
+`baseUrl: string`.
+
+## Design notes & anti-patterns
+
+- **Don't call `registerSoftwareInstance()` on every request or every app
+  boot without a stable `$clientReference`.** Each call without one — or with
+  a freshly generated one — creates a brand-new App Station instance and API
+  key, orphaning the previous ones server-side. Register once, persist the
+  result, replay it.
+- **Don't expect this package to persist anything for you.** No migrations, no
+  models, no cache. If you need to look up "which App Station instance belongs
+  to this tenant", that lookup lives in your application's own data model.
+- **Don't try to set `api.baseUrl` through Laravel config or an env var.** It
+  only ever comes from `appstation.conf.json`, with a non-`env()` literal
+  fallback — never from `env()` directly, by design.
+- **Don't catch `RegistraValidationException` expecting to catch an App
+  Station failure, or vice versa.** The two hierarchies are intentionally
+  separate.
+- **Don't skip signature verification** on `checkForUpdate()`'s `signature`
+  field when App Station provides one — it exists precisely so you can detect
+  a tampered or mis-delivered update package before installing it.
 
 ## Changelog
 
