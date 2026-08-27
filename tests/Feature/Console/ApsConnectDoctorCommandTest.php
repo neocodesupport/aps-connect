@@ -46,6 +46,7 @@ it('succeeds when the api key is accepted and the probe licence is not found', f
     $this->artisan('aps-connect:doctor')
         ->expectsOutputToContain('Connecté à Registra en tant que "My Software"')
         ->expectsOutputToContain('licence de test introuvable')
+        ->expectsOutputToContain('App Station : URL résolue sur "'.config('aps-connect.appstation_base_url').'"')
         ->assertSuccessful();
 });
 

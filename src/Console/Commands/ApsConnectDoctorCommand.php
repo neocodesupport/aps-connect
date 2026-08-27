@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ApsConnect\ApsConnect\Console\Commands;
 
 use ApsConnect\ApsConnect\ApsConnect;
+use ApsConnect\ApsConnect\Data\AppStationCredentials;
 use ApsConnect\ApsConnect\Exceptions\ApsConnectException;
 use ApsConnect\ApsConnect\Exceptions\InvalidApiKeyException;
 use ApsConnect\ApsConnect\Exceptions\LicenceNotFoundException;
@@ -20,12 +21,12 @@ class ApsConnectDoctorCommand extends Command
     /**
      * The command description.
      */
-    protected $description = 'Diagnose the Registra connection: resolves credentials and confirms the API key is accepted.';
+    protected $description = 'Diagnose the Registra connection (verifies the API key) and report the resolved App Station configuration.';
 
     /**
      * Execute the console command.
      */
-    public function handle(ApsConnect $apsConnect): int
+    public function handle(ApsConnect $apsConnect, AppStationCredentials $appStationCredentials): int
     {
         try {
             $identity = $apsConnect->me();
@@ -57,6 +58,13 @@ class ApsConnectDoctorCommand extends Command
 
             return self::FAILURE;
         }
+
+        // No live probe against App Station here: `instances/register` (the
+        // only endpoint authenticated with this same product key) creates a
+        // real SoftwareInstance on every call — unlike Registra's
+        // verifyLicence(), it has no side-effect-free equivalent to call
+        // with a throwaway probe value.
+        $this->components->info("App Station : URL résolue sur \"{$appStationCredentials->baseUrl}\" (même clé API que Registra ci-dessus).");
 
         return self::SUCCESS;
     }
