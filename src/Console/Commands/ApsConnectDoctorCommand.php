@@ -10,6 +10,7 @@ use Neocode\ApsConnect\Data\AppStationCredentials;
 use Neocode\ApsConnect\Exceptions\ApsConnectException;
 use Neocode\ApsConnect\Exceptions\InvalidApiKeyException;
 use Neocode\ApsConnect\Exceptions\LicenceNotFoundException;
+use Neocode\ApsConnect\Exceptions\MissingCredentialsException;
 
 class ApsConnectDoctorCommand extends Command
 {
@@ -26,10 +27,15 @@ class ApsConnectDoctorCommand extends Command
     /**
      * Execute the console command.
      */
-    public function handle(ApsConnect $apsConnect, AppStationCredentials $appStationCredentials): int
+    public function handle(): int
     {
         try {
+            $apsConnect = app(ApsConnect::class);
             $identity = $apsConnect->me();
+        } catch (MissingCredentialsException $e) {
+            $this->components->error("Configuration incomplète : {$e->getMessage()}");
+
+            return self::FAILURE;
         } catch (InvalidApiKeyException $e) {
             $this->components->error("Registra a rejeté la clé API configurée : {$e->getMessage()}");
 
@@ -64,6 +70,7 @@ class ApsConnectDoctorCommand extends Command
         // real SoftwareInstance on every call — unlike Registra's
         // verifyLicence(), it has no side-effect-free equivalent to call
         // with a throwaway probe value.
+        $appStationCredentials = app(AppStationCredentials::class);
         $this->components->info("App Station : URL résolue sur \"{$appStationCredentials->baseUrl}\" (même clé API que Registra ci-dessus).");
 
         return self::SUCCESS;

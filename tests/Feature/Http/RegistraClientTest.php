@@ -15,7 +15,7 @@ use Neocode\ApsConnect\Exceptions\RegistraValidationException;
 use Neocode\ApsConnect\Http\RegistraClient;
 
 beforeEach(function () {
-    $this->baseUrl = config('aps-connect.registra_base_url');
+    $this->baseUrl = 'https://registra.neocode.ci/api';
     $this->credentials = new RegistraCredentials('secret-key', $this->baseUrl, 'production');
     $this->client = new RegistraClient($this->credentials, app(Factory::class));
 });
@@ -149,6 +149,24 @@ it('maps a 429 response to RegistraUnavailableException with the retry-after hea
     } catch (RegistraUnavailableException $e) {
         expect($e->status)->toBe(429);
         expect($e->retryAfter)->toBe(12);
+
+        return;
+    }
+
+    test()->fail('Expected RegistraUnavailableException was not thrown.');
+});
+
+it('parses an HTTP-date Retry-After header into a number of seconds', function () {
+    Http::fake(['*' => Http::response(
+        ['success' => false, 'message' => 'Trop de requêtes.'],
+        429,
+        ['Retry-After' => gmdate('D, d M Y H:i:s \G\M\T', time() + 30)],
+    )]);
+
+    try {
+        $this->client->post('licences/verify', ['licence_key' => 'x']);
+    } catch (RegistraUnavailableException $e) {
+        expect($e->retryAfter)->toBeGreaterThanOrEqual(28)->toBeLessThanOrEqual(30);
 
         return;
     }

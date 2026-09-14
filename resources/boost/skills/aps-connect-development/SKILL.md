@@ -18,28 +18,35 @@ Use this skill when a Laravel application needs to integrate the Aps Connect pac
 
 ## Workflow
 
-### 1. Install and publish config
+### 1. Install
 
 ```bash
 composer require neocode/aps-connect
-php artisan vendor:publish --tag="aps-connect-config"
 ```
 
-This publishes `config/aps-connect.php`, which holds only the two optional API key
-overrides (`api_key`, `dev_api_key`). There are no other publish tags — the package
-ships no migrations, views, translations, or assets.
+There is nothing to publish: no config file, migrations, views, translations,
+or assets. Every credential is resolved exclusively from two project files —
+see below.
 
-### 2. Provide `appstation.conf.json` at the project root
+### 2. Provide `appstation.conf.json` / `appstation.conf.local.json` at the project root
 
 All credentials are resolved by `Neocode\ApsConnect\Support\ProjectConfigReader`
-from an `appstation.conf.json` file at the application's base path (written by the
-`aps` CLI, e.g. `aps init`):
+from two files at the application's base path, both written by the `aps` CLI
+(e.g. `aps init`):
 
 ```json
+// appstation.conf.json (versioned, publisher-controlled)
 {
   "environment": "production",
-  "api": { "baseUrl": "https://registra.example.com/api" },
-  "appstation": { "baseUrl": "https://app-station.example.com" }
+  "api": { "baseUrl": "https://registra.neocode.ci/api" },
+  "appstation": { "baseUrl": "https://app-station.neocode.ci" }
+}
+```
+
+```json
+// appstation.conf.local.json (gitignored, local/deployment-controlled)
+{
+  "auth": { "apiKey": "the-product-api-key" }
 }
 ```
 
@@ -48,23 +55,16 @@ from an `appstation.conf.json` file at the application's base path (written by t
 `aps` CLI's own App Station client does. `api.baseUrl` (Registra), on the other
 hand, already includes `/api`.
 
-- `environment` is read **only** from this file — there is no Laravel config/env
-  override. Which environment ("development" vs "production") licence checks run
-  against is a trust decision, not a convenience default: no project file (or no
-  `environment` key) always means "production".
-- `api.baseUrl` and `appstation.baseUrl` both point at the one real, shared
-  production instance of each service, so when the file omits either,
-  `ProjectConfigReader` falls back to a config default:
-  `config('aps-connect.registra_base_url')` (`https://registra.neocode.ci/api`) and
-  `config('aps-connect.appstation_base_url')` (`https://app-station.neocode.ci`).
-  Both are plain literals in `config/aps-connect.php` — not `env()`-backed, so a
-  deployer's `.env` can't redirect them. An explicit value in the file always wins
-  over these defaults; they only fill in when the file is silent.
-- The API key is the one value with a config/env fallback (because
-  `appstation.conf.local.json`, the gitignored local file, may not exist in CI):
-  set `config('aps-connect.api_key')` / `REGISTRA_API_KEY` for production, or
-  `config('aps-connect.dev_api_key')` / `REGISTRA_DEV_API_KEY` for the development
-  environment declared in `appstation.conf.json`.
+- `environment`, `api.baseUrl`, and `appstation.baseUrl` are read **only** from
+  `appstation.conf.json` — there is no Laravel config/env override or fallback
+  for any of the three. Which environment licence checks run against, and
+  which server every call is sent to, are trust decisions, not convenience
+  defaults: a missing file or key throws `MissingCredentialsException` instead
+  of silently falling back to something a deployer could edit.
+- The API key is read **only** from `appstation.conf.local.json`'s
+  `auth.apiKey` — same rule, no Laravel config/env fallback. That file always
+  holds whichever key is correct for the current `environment` (never both at
+  once), so there's no separate dev/prod key selection to configure.
 - The same key authenticates both Registra licence calls and the App Station
   `instances/register` call — there is no separate "App Station" credential to set up.
 
@@ -95,20 +95,26 @@ $registration = ApsConnect::registerSoftwareInstance($licenceKey, $clientReferen
 
 // Later, using the persisted instance api key:
 $download = ApsConnect::downloadPackage($instanceApiKey, $packageReleaseId, $moduleLicenceKey);
-$update = ApsConnect::checkForUpdate($instanceApiKey, $currentVersion, $platform, $channel);
+$update = ApsConnect::checkForUpdate($instanceApiKey, $currentVersion, $platform, $minStability, $currentChannel);
 
 if ($update->updateAvailable) {
     // $update->release, $update->url, $update->checksum, $update->signature
 }
 ```
 
-Marketplace catalogue (App Station) — public, unauthenticated reads scoped to
-*this* software's own packages and releases; safe to call anywhere, including
-outside a licensed context. There is no "list every software" or "get an
-arbitrary software" method — your integration already knows which software
-it is:
+`$minStability` (nightly < alpha < beta < rc < stable, default `stable`) is the
+least stable channel App Station will consider — pass `'beta'` to receive beta
+releases as updates, for example. `$currentChannel` (default `stable`) is the
+channel the caller is currently on; it only ever lets App Station offer a
+same-version upgrade to a *more* stable channel (e.g. `1.0.0-rc` -> `1.0.0-stable`),
+never the reverse.
+
+Marketplace catalogue (App Station) — public, unauthenticated reads; safe to
+call anywhere, including outside a licensed context:
 
 ```php
+$softwares = ApsConnect::listSoftwares(['category_id' => $categoryId, 'featured' => true, 'q' => $search, 'sort' => 'recent']);
+$software = ApsConnect::getSoftware($softwareSlug);
 $releases = ApsConnect::getSoftwareReleases($slug);
 $packages = ApsConnect::getSoftwarePackages($slug);
 $otherPackages = ApsConnect::listPackages(['software_id' => $softwareId]);
@@ -121,8 +127,8 @@ $results = ApsConnect::search($query, type: 'all'); // 'software' | 'package' | 
 // listSoftwares/getSoftwareReleases/getSoftwarePackages/listPackages/
 // getPackageReleases/listTags all return a Paginated: ->items, ->currentPage,
 // ->lastPage, ->perPage, ->total. Pass ['page' => N] / $page again yourself.
-foreach ($softwares->items as $item) {
-    // $item is a Software DTO
+foreach ($packages->items as $item) {
+    // $item is a Package DTO
 }
 ```
 
@@ -161,12 +167,11 @@ Read before executing:
 - `src/ApsConnect.php` — the full public API surface
 - `src/Facades/ApsConnect.php` — facade accessor
 - `src/Support/ProjectConfigReader.php` — how `appstation.conf.json` /
-  `appstation.conf.local.json` / config resolve into credentials, and why the
-  environment has no config/env override at all while both base urls do (as a
-  literal fallback default only, never an override of an explicit file value)
+  `appstation.conf.local.json` resolve into credentials, and why none of the
+  three values (environment, both base urls, the api key) has a config/env
+  override or fallback
 - `src/Http/RegistraClient.php`, `src/Http/AppStationClient.php` — request/response
   and error-mapping behavior per service
-- `config/aps-connect.php` — the four configurable values
 
 ## Examples
 
@@ -183,12 +188,11 @@ Read before executing:
 
 ## Anti-patterns
 
-- Do not try to override an explicit `api.baseUrl`/`appstation.baseUrl` already set
-  in `appstation.conf.json` through Laravel config or an env var — `registra_base_url`
-  / `appstation_base_url` in `config/aps-connect.php` are fallback defaults used only
-  when the file is silent, never overrides, and neither is `env()`-backed.
-- Do not try to set `environment` through Laravel config or an env var — it has no
-  fallback at all and is only ever read from `appstation.conf.json`, by design.
+- Do not try to set `api.baseUrl`/`appstation.baseUrl`/`environment`/the api key
+  through Laravel config or an env var — none of them has a config/env
+  fallback; the first three are only ever read from `appstation.conf.json`,
+  and the api key only from `appstation.conf.local.json`'s `auth.apiKey`, by
+  design.
 - Do not call `registerSoftwareInstance()` without a stable `$clientReference` (e.g.
   regenerating one per request) — this creates a new App Station instance and API
   key on every call instead of reusing the existing one.

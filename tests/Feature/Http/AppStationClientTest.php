@@ -19,7 +19,7 @@ beforeEach(function () {
     // `aps` CLI's own AppStationClient stores it the same way and prefixes
     // every request path with /api/v1/... itself; AppStationClient mirrors
     // that here (see AppStationClient::API_PREFIX).
-    $this->baseUrl = config('aps-connect.appstation_base_url');
+    $this->baseUrl = 'https://app-station.neocode.ci';
     $this->credentials = new AppStationCredentials('product-key', $this->baseUrl);
     $this->client = new AppStationClient($this->credentials, app(Factory::class));
 });
@@ -68,23 +68,26 @@ it('omits the module licence key when downloading without one', function () {
 it('sends the instance api key when checking for an update', function () {
     Http::fake(['*' => Http::response(['update_available' => false, 'latest_version' => null], 200)]);
 
-    $this->client->checkForUpdate('instance-key', '1.2.0', 'windows', 'stable');
+    $this->client->checkForUpdate('instance-key', '1.2.0', 'windows', 'beta', 'stable');
 
     Http::assertSent(function ($request) {
         return $request->url() === "{$this->baseUrl}/api/v1/integrations/software/updates/check"
             && $request->hasHeader('X-Software-Api-Key', 'instance-key')
             && $request['current_version'] === '1.2.0'
             && $request['platform'] === 'windows'
-            && $request['channel'] === 'stable';
+            && $request['min_stability'] === 'beta'
+            && $request['current_channel'] === 'stable';
     });
 });
 
-it('omits platform and channel when checking for an update without them', function () {
+it('omits platform, min_stability and current_channel when checking for an update without them', function () {
     Http::fake(['*' => Http::response(['update_available' => false, 'latest_version' => null], 200)]);
 
     $this->client->checkForUpdate('instance-key', '1.2.0');
 
-    Http::assertSent(fn ($request) => ! array_key_exists('platform', $request->data()) && ! array_key_exists('channel', $request->data()));
+    Http::assertSent(fn ($request) => ! array_key_exists('platform', $request->data())
+        && ! array_key_exists('min_stability', $request->data())
+        && ! array_key_exists('current_channel', $request->data()));
 });
 
 it('maps a 401 response to InvalidAppStationApiKeyException', function () {
@@ -149,6 +152,24 @@ it('maps a 429 response to AppStationUnavailableException with the retry-after h
     test()->fail('Expected AppStationUnavailableException was not thrown.');
 });
 
+it('parses an HTTP-date Retry-After header into a number of seconds', function () {
+    Http::fake(['*' => Http::response(
+        ['message' => 'Trop de requêtes.'],
+        429,
+        ['Retry-After' => gmdate('D, d M Y H:i:s \G\M\T', time() + 30)],
+    )]);
+
+    try {
+        $this->client->checkForUpdate('instance-key', '1.0.0');
+    } catch (AppStationUnavailableException $e) {
+        expect($e->retryAfter)->toBeGreaterThanOrEqual(28)->toBeLessThanOrEqual(30);
+
+        return;
+    }
+
+    test()->fail('Expected AppStationUnavailableException was not thrown.');
+});
+
 it('maps a 503 response to AppStationUnavailableException without a retry-after header', function () {
     Http::fake(['*' => Http::response(['message' => 'Indisponible.'], 503)]);
 
@@ -195,6 +216,25 @@ it('still maps a 404 from downloadPackage to PackageReleaseNotFoundException, un
 
     expect(fn () => $this->client->downloadPackage('instance-key', 1))
         ->toThrow(PackageReleaseNotFoundException::class, 'Release introuvable.');
+});
+
+it('sends the product api key when listing marketplace softwares', function () {
+    Http::fake(['*' => Http::response(['data' => [], 'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 12, 'total' => 0]], 200)]);
+
+    $this->client->softwares(['category_id' => 2]);
+
+    Http::assertSent(function ($request) {
+        return $request->url() === "{$this->baseUrl}/api/v1/softwares?category_id=2"
+            && $request->hasHeader('X-Software-Api-Key', 'product-key');
+    });
+});
+
+it('fetches a single marketplace software by slug', function () {
+    Http::fake(['*' => Http::response(['id' => 1, 'name' => 'Corptrix', 'slug' => 'corptrix'], 200)]);
+
+    $this->client->showSoftware('corptrix');
+
+    Http::assertSent(fn ($request) => $request->url() === "{$this->baseUrl}/api/v1/softwares/corptrix");
 });
 
 it('requests categories without pagination params', function () {

@@ -13,6 +13,7 @@ use Neocode\ApsConnect\Data\PackageDownload;
 use Neocode\ApsConnect\Data\PackageRelease;
 use Neocode\ApsConnect\Data\Paginated;
 use Neocode\ApsConnect\Data\SearchResults;
+use Neocode\ApsConnect\Data\Software;
 use Neocode\ApsConnect\Data\SoftwareIdentity;
 use Neocode\ApsConnect\Data\SoftwareInstanceRegistration;
 use Neocode\ApsConnect\Data\SoftwareRelease;
@@ -149,11 +150,25 @@ final class ApsConnect
         );
     }
 
-    public function checkForUpdate(string $instanceApiKey, string $currentVersion, ?string $platform = null, ?string $channel = null): UpdateCheckResult
+    public function checkForUpdate(string $instanceApiKey, string $currentVersion, ?string $platform = null, ?string $minStability = null, ?string $currentChannel = null): UpdateCheckResult
     {
         return UpdateCheckResult::fromArray(
-            $this->appStation->checkForUpdate($instanceApiKey, $currentVersion, $platform, $channel),
+            $this->appStation->checkForUpdate($instanceApiKey, $currentVersion, $platform, $minStability, $currentChannel),
         );
+    }
+
+    /**
+     * @param  array{category_id?: int, featured?: bool, q?: string, sort?: string, page?: int}  $filters
+     * @return Paginated<Software>
+     */
+    public function listSoftwares(array $filters = []): Paginated
+    {
+        return Paginated::fromArray($this->appStation->softwares($filters), Software::fromArray(...));
+    }
+
+    public function getSoftware(string $slug): Software
+    {
+        return Software::fromArray($this->appStation->showSoftware($slug));
     }
 
     /**

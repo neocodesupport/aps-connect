@@ -4,16 +4,9 @@ declare(strict_types=1);
 
 namespace Neocode\ApsConnect\Exceptions;
 
+use Neocode\ApsConnect\Exceptions\Concerns\CarriesRequestContext;
+
 class RegistraRequestException extends ApsConnectException
 {
-    /**
-     * @param  array<string, mixed>  $body
-     */
-    public function __construct(
-        string $message,
-        public readonly int $status,
-        public readonly array $body = [],
-    ) {
-        parent::__construct($message);
-    }
+    use CarriesRequestContext;
 }
