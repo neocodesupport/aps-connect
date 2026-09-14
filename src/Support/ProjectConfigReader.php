@@ -10,21 +10,20 @@ use Neocode\ApsConnect\Exceptions\MissingCredentialsException;
 
 /**
  * Resolves Registra credentials the same way the `aps` CLI's own project
- * files are laid out. appstation.conf.json (versioned, publisher-controlled,
- * always present unlike the gitignored local file) is the trust anchor: an
- * explicit `api.baseUrl` or `environment` in it always wins over anything
- * else. The api key additionally has a Laravel config/env override, because
- * appstation.conf.local.json is gitignored — it simply does not exist in
- * most CI/CD pipelines, so an env var is the only way to deliver the key
- * there, and a wrong/forged key is rejected by Registra anyway (nothing to
- * gain by overriding it). The base url also has a config fallback — see
- * resolveBaseUrl() — used only when the project file is silent, never to
- * override an explicit value in it. The environment has no fallback at all:
- * no project file (or no `environment` key in it) always means "production"
- * — see resolveEnvironment().
+ * files are laid out. appstation.conf.json (versioned, publisher-controlled)
+ * and appstation.conf.local.json (gitignored, local/deployment-controlled)
+ * are the only two sources: no Laravel config or env var ever overrides or
+ * fills in for either. `api.baseUrl` and `environment` come exclusively from
+ * appstation.conf.json; the api key comes exclusively from
+ * appstation.conf.local.json's `auth.apiKey` — see credentials(). A missing
+ * or empty value in either file throws MissingCredentialsException rather
+ * than silently falling back to something a deployer could edit.
  */
 final class ProjectConfigReader
 {
+    /** @var array<string, array<string, mixed>> */
+    private array $jsonFileCache = [];
+
     public function __construct(private readonly string $basePath) {}
 
     public function credentials(): RegistraCredentials
@@ -34,22 +33,20 @@ final class ProjectConfigReader
 
         $environment = $this->resolveEnvironment($projectConfig);
 
-        $apiKeyConfigKey = $environment === 'development' ? 'dev_api_key' : 'api_key';
-
-        $apiKey = config("aps-connect.{$apiKeyConfigKey}") ?? $localConfig['auth']['apiKey'] ?? null;
+        $apiKey = $localConfig['auth']['apiKey'] ?? null;
         $baseUrl = $this->resolveBaseUrl($projectConfig);
 
         if (! is_string($apiKey) || $apiKey === '') {
             throw new MissingCredentialsException(
-                "No Registra API key configured. Set config('aps-connect.{$apiKeyConfigKey}') / its env var, ".
-                'or run `aps init` to write appstation.conf.local.json.',
+                'No Registra API key configured: appstation.conf.local.json has no `auth.apiKey`. '.
+                'Run `aps init` to write it.',
             );
         }
 
         if (! is_string($baseUrl) || $baseUrl === '') {
             throw new MissingCredentialsException(
-                'No Registra base URL configured: appstation.conf.json has no `api.baseUrl`, and '.
-                "config('aps-connect.registra_base_url') is empty.",
+                'No Registra base URL configured: appstation.conf.json has no `api.baseUrl`. '.
+                'Run `aps init` (or `aps promote`) to write it.',
             );
         }
 
@@ -63,30 +60,23 @@ final class ProjectConfigReader
      * authenticated with the exact same product `X-Software-Api-Key` as every
      * Registra call — App Station's Software record syncs its accepted keys
      * from Registra's own secrets — so re-deriving it here would just
-     * duplicate ProjectConfigReader::credentials()'s env/config resolution.
+     * duplicate ProjectConfigReader::credentials()'s file resolution.
      *
-     * Unlike Registra's `api.baseUrl` — which genuinely varies (App Station's
-     * own `/registra/init` returns it dynamically per software/environment,
-     * see the `aps` CLI) — App Station itself has exactly one production
-     * address, `https://app-station.neocode.ci`, hardcoded as `aps login`'s
-     * own default in the `aps` CLI. So `appstation.conf.json`'s
-     * `appstation.baseUrl` still wins when present (it's the versioned,
-     * publisher-controlled value), but when it's absent this falls back to
-     * `config('aps-connect.appstation_base_url')` — a plain literal in
-     * config/aps-connect.php, deliberately not wrapped in `env()`, so a
-     * deployer's .env can't redirect these calls the way it could with a
-     * `env()`-backed default.
+     * Like Registra's `api.baseUrl`, `appstation.baseUrl` has NO config/env
+     * fallback: it determines which server distribution/registration calls
+     * are sent to, so a missing value fails loudly instead of silently
+     * falling back to a value a deployer could edit.
      */
     public function appStationCredentials(RegistraCredentials $registraCredentials): AppStationCredentials
     {
         $projectConfig = $this->readJsonFile($this->basePath.'/appstation.conf.json');
 
-        $baseUrl = $projectConfig['appstation']['baseUrl'] ?? config('aps-connect.appstation_base_url');
+        $baseUrl = $this->resolveNestedBaseUrl($projectConfig, 'appstation');
 
-        if (! is_string($baseUrl) || $baseUrl === '') {
+        if ($baseUrl === null) {
             throw new MissingCredentialsException(
-                'No App Station base URL configured: appstation.conf.json has no `appstation.baseUrl`, and '.
-                "config('aps-connect.appstation_base_url') is empty.",
+                'No App Station base URL configured: appstation.conf.json has no `appstation.baseUrl`. '.
+                'Run `aps init` (or `aps promote`) to write it.',
             );
         }
 
@@ -119,18 +109,30 @@ final class ProjectConfigReader
      * determines which server every "is this licence valid" call is sent
      * to, so an explicit value here always wins — it is versioned and
      * publisher-controlled, unlike an env var anyone deploying the licensed
-     * application could edit in their own .env. When the project file is
-     * silent, this falls back to `config('aps-connect.registra_base_url')`
-     * — a plain literal in config/aps-connect.php pointing at Registra's
-     * real shared production instance, deliberately not wrapped in `env()`
-     * so a deployer's .env still can't redirect verification calls the way
-     * it could with an `env()`-backed default.
+     * application could edit in their own .env. No project file (or no
+     * `api.baseUrl` key in it) means no Registra base URL, full stop: there
+     * is deliberately no config/env fallback to redirect verification calls
+     * to instead.
      *
      * @param  array<string, mixed>  $projectConfig
      */
     private function resolveBaseUrl(array $projectConfig): ?string
     {
-        $projectBaseUrl = $projectConfig['api']['baseUrl'] ?? config('aps-connect.registra_base_url');
+        return $this->resolveNestedBaseUrl($projectConfig, 'api');
+    }
+
+    /**
+     * Reads `$projectConfig[$projectSection]['baseUrl']`, or null when the
+     * project file is silent (or `$projectSection` isn't the expected object
+     * shape) — deliberately no config/env fallback, see resolveBaseUrl() and
+     * appStationCredentials().
+     *
+     * @param  array<string, mixed>  $projectConfig
+     */
+    private function resolveNestedBaseUrl(array $projectConfig, string $projectSection): ?string
+    {
+        $section = $projectConfig[$projectSection] ?? null;
+        $projectBaseUrl = is_array($section) ? ($section['baseUrl'] ?? null) : null;
 
         return is_string($projectBaseUrl) && $projectBaseUrl !== '' ? $projectBaseUrl : null;
     }
@@ -139,6 +141,18 @@ final class ProjectConfigReader
      * @return array<string, mixed>
      */
     private function readJsonFile(string $path): array
+    {
+        if (array_key_exists($path, $this->jsonFileCache)) {
+            return $this->jsonFileCache[$path];
+        }
+
+        return $this->jsonFileCache[$path] = $this->decodeJsonFile($path);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function decodeJsonFile(string $path): array
     {
         if (! is_file($path)) {
             return [];

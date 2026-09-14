@@ -21,11 +21,14 @@ class ApsConnectServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        $this->mergeConfigFrom(__DIR__.'/../config/aps-connect.php', 'aps-connect');
+        $this->app->singleton(
+            ProjectConfigReader::class,
+            fn (Application $app) => new ProjectConfigReader($app->basePath()),
+        );
 
         $this->app->singleton(
             RegistraCredentials::class,
-            fn (Application $app) => (new ProjectConfigReader($app->basePath()))->credentials(),
+            fn (Application $app) => $app->make(ProjectConfigReader::class)->credentials(),
         );
 
         $this->app->singleton(
@@ -35,7 +38,7 @@ class ApsConnectServiceProvider extends ServiceProvider
 
         $this->app->singleton(
             AppStationCredentials::class,
-            fn (Application $app) => (new ProjectConfigReader($app->basePath()))->appStationCredentials($app->make(RegistraCredentials::class)),
+            fn (Application $app) => $app->make(ProjectConfigReader::class)->appStationCredentials($app->make(RegistraCredentials::class)),
         );
 
         $this->app->singleton(
@@ -54,10 +57,6 @@ class ApsConnectServiceProvider extends ServiceProvider
         if (! $this->app->runningInConsole()) {
             return;
         }
-
-        $this->publishes([
-            __DIR__.'/../config/aps-connect.php' => config_path('aps-connect.php'),
-        ], ['aps-connect', 'aps-connect-config']);
 
         $this->commands([
             ApsConnectDoctorCommand::class,

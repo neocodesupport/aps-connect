@@ -16,11 +16,11 @@ use Neocode\ApsConnect\Exceptions\AppStationValidationException;
 use Neocode\ApsConnect\Exceptions\InvalidAppStationApiKeyException;
 use Neocode\ApsConnect\Exceptions\PackageReleaseNotFoundException;
 
-final class AppStationClient
+final class AppStationClient extends ApiClient
 {
     /**
-     * appstation.baseUrl (from appstation.conf.json / config('aps-connect.appstation_base_url'))
-     * is the bare App Station domain — e.g. `https://app-station.neocode.ci`,
+     * appstation.baseUrl (from appstation.conf.json) is the bare App Station
+     * domain — e.g. `https://app-station.neocode.ci`,
      * with no `/api/v1` — exactly like the `aps` CLI's own `AppStationClient`
      * (src/lib/appstationApi.ts) stores it and prefixes every request path with
      * `/api/v1/...` itself. This client does the same here.
@@ -29,8 +29,10 @@ final class AppStationClient
 
     public function __construct(
         private readonly AppStationCredentials $credentials,
-        private readonly Factory $http,
-    ) {}
+        Factory $http,
+    ) {
+        parent::__construct($http);
+    }
 
     /**
      * @return array<string, mixed>
@@ -38,11 +40,11 @@ final class AppStationClient
     public function registerInstance(string $licenceKey, string $clientReference, ?string $label = null): array
     {
         return $this->handle(
-            $this->request($this->credentials->apiKey)->post(self::API_PREFIX.'integrations/software/instances/register', array_filter([
+            $this->request($this->credentials->apiKey)->post(self::API_PREFIX.'integrations/software/instances/register', $this->withoutNulls([
                 'licence_key' => $licenceKey,
                 'client_reference' => $clientReference,
                 'label' => $label,
-            ], static fn (mixed $value): bool => $value !== null)),
+            ])),
         );
     }
 
@@ -52,23 +54,48 @@ final class AppStationClient
     public function downloadPackage(string $instanceApiKey, int $packageReleaseId, ?string $moduleLicenceKey = null): array
     {
         return $this->handle(
-            $this->request($instanceApiKey)->post(self::API_PREFIX."integrations/software/packages/{$packageReleaseId}/download", array_filter([
+            $this->request($instanceApiKey)->post(self::API_PREFIX."integrations/software/packages/{$packageReleaseId}/download", $this->withoutNulls([
                 'module_licence_key' => $moduleLicenceKey,
-            ], static fn (mixed $value): bool => $value !== null)),
+            ])),
+            PackageReleaseNotFoundException::class,
+        );
+    }
+
+    /**
+     * @param  string|null  $minStability  Least stable release channel to consider (nightly, alpha, beta, rc, stable — default stable). A release published on a less stable channel than this is never offered, even at a newer version number.
+     * @param  string|null  $currentChannel  Channel the caller is currently on (default stable). Only lets App Station offer a same-version upgrade to a *more* stable channel (e.g. 1.0.0-rc -> 1.0.0-stable), never the reverse.
+     * @return array<string, mixed>
+     */
+    public function checkForUpdate(string $instanceApiKey, string $currentVersion, ?string $platform = null, ?string $minStability = null, ?string $currentChannel = null): array
+    {
+        return $this->handle(
+            $this->request($instanceApiKey)->post(self::API_PREFIX.'integrations/software/updates/check', $this->withoutNulls([
+                'current_version' => $currentVersion,
+                'platform' => $platform,
+                'min_stability' => $minStability,
+                'current_channel' => $currentChannel,
+            ])),
+        );
+    }
+
+    /**
+     * @param  array{category_id?: int, featured?: bool, q?: string, sort?: string, page?: int}  $filters
+     * @return array<string, mixed>
+     */
+    public function softwares(array $filters = []): array
+    {
+        return $this->handle(
+            $this->request($this->credentials->apiKey)->get(self::API_PREFIX.'softwares', $filters),
         );
     }
 
     /**
      * @return array<string, mixed>
      */
-    public function checkForUpdate(string $instanceApiKey, string $currentVersion, ?string $platform = null, ?string $channel = null): array
+    public function showSoftware(string $slug): array
     {
         return $this->handle(
-            $this->request($instanceApiKey)->post(self::API_PREFIX.'integrations/software/updates/check', array_filter([
-                'current_version' => $currentVersion,
-                'platform' => $platform,
-                'channel' => $channel,
-            ], static fn (mixed $value): bool => $value !== null)),
+            $this->request($this->credentials->apiKey)->get(self::API_PREFIX."softwares/{$slug}"),
         );
     }
 
@@ -79,7 +106,6 @@ final class AppStationClient
     {
         return $this->handle(
             $this->request($this->credentials->apiKey)->get(self::API_PREFIX."softwares/{$slug}/releases", ['page' => $page]),
-            AppStationResourceNotFoundException::class,
         );
     }
 
@@ -90,7 +116,6 @@ final class AppStationClient
     {
         return $this->handle(
             $this->request($this->credentials->apiKey)->get(self::API_PREFIX."softwares/{$slug}/packages", ['page' => $page]),
-            AppStationResourceNotFoundException::class,
         );
     }
 
@@ -112,7 +137,6 @@ final class AppStationClient
     {
         return $this->handle(
             $this->request($this->credentials->apiKey)->get(self::API_PREFIX."packages/{$softwareSlug}/{$slug}"),
-            AppStationResourceNotFoundException::class,
         );
     }
 
@@ -123,7 +147,6 @@ final class AppStationClient
     {
         return $this->handle(
             $this->request($this->credentials->apiKey)->get(self::API_PREFIX."packages/{$softwareSlug}/{$slug}/releases", ['page' => $page]),
-            AppStationResourceNotFoundException::class,
         );
     }
 
@@ -159,26 +182,20 @@ final class AppStationClient
 
     private function request(string $apiKey): PendingRequest
     {
-        return $this->http
-            ->baseUrl(rtrim($this->credentials->baseUrl, '/'))
-            ->withHeaders(['X-Software-Api-Key' => $apiKey])
-            ->acceptJson();
+        return $this->buildRequest($this->credentials->baseUrl, $apiKey);
     }
 
     /**
      * @param  class-string<AppStationRequestException>  $notFoundException
      * @return array<string, mixed>
      */
-    private function handle(Response $response, string $notFoundException = PackageReleaseNotFoundException::class): array
+    private function handle(Response $response, string $notFoundException = AppStationResourceNotFoundException::class): array
     {
-        $body = $response->json();
-        $body = is_array($body) ? $body : [];
+        [$body, $message] = $this->decode($response, 'App Station');
 
         if ($response->successful()) {
             return $body;
         }
-
-        $message = is_string($body['message'] ?? null) ? $body['message'] : "App Station request failed with status {$response->status()}.";
 
         throw match ($response->status()) {
             401 => new InvalidAppStationApiKeyException($message, $response->status(), $body),
@@ -190,10 +207,12 @@ final class AppStationClient
         };
     }
 
-    private function retryAfter(Response $response): ?int
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<string, mixed>
+     */
+    private function withoutNulls(array $payload): array
     {
-        $header = $response->header('Retry-After');
-
-        return $header === '' ? null : (int) $header;
+        return array_filter($payload, static fn (mixed $value): bool => $value !== null);
     }
 }

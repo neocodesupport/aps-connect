@@ -14,16 +14,21 @@ use Neocode\ApsConnect\Support\ProjectConfigReader;
 
 beforeEach(function () {
     // See ApsConnectServiceProviderTest for why this rebinds to an isolated
-    // temp directory. No explicit api.baseUrl/appstation.baseUrl here: both
-    // fall back to config('aps-connect.registra_base_url') /
-    // ::appstation_base_url.
+    // temp directory. The base urls have no config/env fallback, so both
+    // must be declared explicitly here.
+    $this->registraBaseUrl = 'https://registra.neocode.ci/api';
+    $this->appStationBaseUrl = 'https://app-station.neocode.ci';
+
     $this->basePath = sys_get_temp_dir().'/aps-connect-tests-'.uniqid();
     mkdir($this->basePath, recursive: true);
     file_put_contents($this->basePath.'/appstation.conf.json', json_encode([
         'environment' => 'production',
+        'api' => ['baseUrl' => $this->registraBaseUrl],
+        'appstation' => ['baseUrl' => $this->appStationBaseUrl],
     ]));
-
-    config(['aps-connect.api_key' => 'secret-key']);
+    file_put_contents($this->basePath.'/appstation.conf.local.json', json_encode([
+        'auth' => ['apiKey' => 'secret-key'],
+    ]));
 
     app()->singleton(RegistraCredentials::class, fn () => (new ProjectConfigReader($this->basePath))->credentials());
     app()->singleton(AppStationCredentials::class, fn () => (new ProjectConfigReader($this->basePath))->appStationCredentials(app(RegistraCredentials::class)));
@@ -334,13 +339,13 @@ it('routes licence verification to the sandbox endpoint in the development envir
     // container: environment is only ever sourced from appstation.conf.json
     // now (see ProjectConfigReaderTest), so there is no config() shortcut
     // to force "development" for a full container resolution here.
-    $registraBaseUrl = config('aps-connect.registra_base_url');
+    $registraBaseUrl = $this->registraBaseUrl;
 
     $apsConnect = new ApsConnect(new RegistraClient(
         new RegistraCredentials('dev-secret-key', $registraBaseUrl, 'development'),
         app(Factory::class),
     ), new AppStationClient(
-        new AppStationCredentials('dev-secret-key', config('aps-connect.appstation_base_url')),
+        new AppStationCredentials('dev-secret-key', $this->appStationBaseUrl),
         app(Factory::class),
     ));
 
@@ -356,13 +361,13 @@ it('routes licence verification to the sandbox endpoint in the development envir
 });
 
 it('never routes trial issuance to the sandbox endpoint, even in the development environment', function () {
-    $registraBaseUrl = config('aps-connect.registra_base_url');
+    $registraBaseUrl = $this->registraBaseUrl;
 
     $apsConnect = new ApsConnect(new RegistraClient(
         new RegistraCredentials('dev-secret-key', $registraBaseUrl, 'development'),
         app(Factory::class),
     ), new AppStationClient(
-        new AppStationCredentials('dev-secret-key', config('aps-connect.appstation_base_url')),
+        new AppStationCredentials('dev-secret-key', $this->appStationBaseUrl),
         app(Factory::class),
     ));
 
@@ -442,7 +447,7 @@ it('checks for an update when one is available', function () {
         'signature' => 'sig-1',
     ])]);
 
-    $result = app(ApsConnect::class)->checkForUpdate('instance-secret-key', '1.0.0', 'windows', 'stable');
+    $result = app(ApsConnect::class)->checkForUpdate('instance-secret-key', '1.0.0', 'windows', 'beta', 'stable');
 
     expect($result->updateAvailable)->toBeTrue();
     expect($result->latestVersion)->toBe('2.0.0');
@@ -452,7 +457,10 @@ it('checks for an update when one is available', function () {
     expect($result->checksum)->toBe('sha256:def456');
     expect($result->signature)->toBe('sig-1');
 
-    Http::assertSent(fn ($request) => $request['current_version'] === '1.0.0' && $request['platform'] === 'windows' && $request['channel'] === 'stable');
+    Http::assertSent(fn ($request) => $request['current_version'] === '1.0.0'
+        && $request['platform'] === 'windows'
+        && $request['min_stability'] === 'beta'
+        && $request['current_channel'] === 'stable');
 });
 
 it('checks for an update when none is available', function () {
@@ -467,6 +475,47 @@ it('checks for an update when none is available', function () {
     expect($result->latestVersion)->toBe('1.0.0');
     expect($result->release)->toBeNull();
     expect($result->url)->toBeNull();
+});
+
+it('lists marketplace softwares', function () {
+    Http::fake(['*/api/v1/softwares*' => Http::response([
+        'data' => [[
+            'id' => 1, 'name' => 'Corptrix', 'slug' => 'corptrix', 'tagline' => null, 'description' => null,
+            'logo_url' => null, 'banner_url' => null, 'license_type' => null, 'acquisition_mode' => 'subscription',
+            'status' => 'published', 'is_featured' => false, 'has_modules' => false, 'price_per_day_xof' => null,
+            'lifetime_price_xof' => null, 'downloads_count' => 0, 'rating_avg' => null, 'rating_count' => 0,
+            'publisher' => null, 'categories' => [], 'tags' => [],
+        ]],
+        'meta' => ['current_page' => 1, 'last_page' => 1, 'per_page' => 12, 'total' => 1],
+    ])]);
+
+    $softwares = app(ApsConnect::class)->listSoftwares(['category_id' => 2]);
+
+    expect($softwares->items)->toHaveCount(1);
+    expect($softwares->items[0]->slug)->toBe('corptrix');
+
+    Http::assertSent(fn ($request) => $request['category_id'] === 2);
+});
+
+it('fetches a single marketplace software by slug', function () {
+    Http::fake(['*/api/v1/softwares/corptrix' => Http::response([
+        'id' => 1, 'name' => 'Corptrix', 'slug' => 'corptrix', 'tagline' => null, 'description' => null,
+        'logo_url' => null, 'banner_url' => null, 'license_type' => null, 'acquisition_mode' => 'subscription',
+        'status' => 'published', 'is_featured' => false, 'has_modules' => false, 'price_per_day_xof' => null,
+        'lifetime_price_xof' => null, 'downloads_count' => 0, 'rating_avg' => null, 'rating_count' => 0,
+        'publisher' => null, 'categories' => [], 'tags' => [],
+    ])]);
+
+    $software = app(ApsConnect::class)->getSoftware('corptrix');
+
+    expect($software->slug)->toBe('corptrix');
+});
+
+it('throws AppStationResourceNotFoundException when a software does not exist', function () {
+    Http::fake(['*/api/v1/softwares/missing' => Http::response(['message' => 'Logiciel introuvable.'], 404)]);
+
+    expect(fn () => app(ApsConnect::class)->getSoftware('missing'))
+        ->toThrow(AppStationResourceNotFoundException::class, 'Logiciel introuvable.');
 });
 
 it('lists a software release history', function () {
@@ -491,7 +540,7 @@ it('lists a software release history', function () {
     expect($releases->items)->toHaveCount(1);
     expect($releases->items[0]->version)->toBe('2.0.0');
 
-    Http::assertSent(fn ($request) => $request->url() === config('aps-connect.appstation_base_url').'/api/v1/softwares/corptrix/releases?page=1');
+    Http::assertSent(fn ($request) => $request->url() === $this->appStationBaseUrl.'/api/v1/softwares/corptrix/releases?page=1');
 });
 
 it('lists the packages published under a software', function () {

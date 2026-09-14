@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Neocode\ApsConnect\Data;
 
 use Carbon\CarbonImmutable;
+use Neocode\ApsConnect\Data\Concerns\ParsesReleaseFields;
 
 final readonly class SoftwareRelease
 {
+    use ParsesReleaseFields;
+
     public function __construct(
         public int $id,
         public string $version,
@@ -26,17 +29,6 @@ final readonly class SoftwareRelease
      */
     public static function fromArray(array $data): self
     {
-        return new self(
-            id: (int) $data['id'],
-            version: (string) $data['version'],
-            platform: $data['platform'] ?? null,
-            channel: $data['channel'] ?? null,
-            releaseNotes: $data['release_notes'] ?? null,
-            checksum: (string) $data['checksum'],
-            signature: $data['signature'] ?? null,
-            fileSize: isset($data['file_size']) ? (int) $data['file_size'] : null,
-            isYanked: (bool) ($data['is_yanked'] ?? false),
-            publishedAt: isset($data['published_at']) ? CarbonImmutable::parse($data['published_at']) : null,
-        );
+        return new self(...self::parseReleaseFields($data));
     }
 }

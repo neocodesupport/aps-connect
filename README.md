@@ -28,7 +28,6 @@ application.
 - [Configuration](#configuration)
   - [`appstation.conf.json`](#appstationconfjson)
   - [`appstation.conf.local.json`](#appstationconflocaljson)
-  - [`config/aps-connect.php`](#configaps-connectphp)
   - [Environment & sandbox routing](#environment--sandbox-routing)
 - [Licensing (Registra)](#licensing-registra)
   - [`verifyLicence()`](#verifylicencestring-licencekey-licencestatus)
@@ -44,9 +43,11 @@ application.
 - [Distribution & auto-update (App Station)](#distribution--auto-update-app-station)
   - [`registerSoftwareInstance()`](#registersoftwareinstancestring-licencekey-string-clientreference-string-label--softwareinstanceregistration)
   - [`downloadPackage()`](#downloadpackagestring-instanceapikey-int-packagereleaseid-string-modulelicencekey--packagedownload)
-  - [`checkForUpdate()`](#checkforupdatestring-instanceapikey-string-currentversion-string-platform-string-channel--updatecheckresult)
+  - [`checkForUpdate()`](#checkforupdatestring-instanceapikey-string-currentversion-string-platform-string-minstability-string-currentchannel--updatecheckresult)
   - [A complete distribution flow](#a-complete-distribution-flow)
 - [Marketplace catalogue (App Station)](#marketplace-catalogue-app-station)
+  - [`listSoftwares()`](#listsoftwaresarray-filters--paginatedsoftware)
+  - [`getSoftware()`](#getsoftwarestring-slug-software)
   - [`getSoftwareReleases()`](#getsoftwarereleasesstring-slug-int-page--paginatedsoftwarerelease)
   - [`getSoftwarePackages()`](#getsoftwarepackagesstring-slug-int-page--paginatedpackage)
   - [`listPackages()`](#listpackagesarray-filters--paginatedpackage)
@@ -85,17 +86,11 @@ You can install the package via Composer:
 composer require neocode/aps-connect
 ```
 
-The package ships a single publishable resource, its config file:
-
-```bash
-php artisan vendor:publish --tag="aps-connect-config"
-```
-
-This is optional — the package works out of the box with sane defaults. Publish it
-only if you need to override the Registra API key resolution (see
-[Configuration](#configuration) below). There are no migrations, views,
-translations, or public assets to publish: the package is a pure HTTP client, it
-never touches your database or your frontend.
+There is nothing to publish: no config file, no migrations, views,
+translations, or public assets. The package is a pure HTTP client — it never
+touches your database or your frontend, and every credential comes exclusively
+from `appstation.conf.json` / `appstation.conf.local.json` (see
+[Configuration](#configuration) below).
 
 ## How it works
 
@@ -141,9 +136,9 @@ written by the `aps` CLI, not by hand. Aps Connect reads it through
   "type": "software",
   "environment": "production",
   "software": { "token": "53b5e626-4d7a-4a8b-8fbd-8db698b520e4", "name": "YourSoftware" },
-  "api": { "baseUrl": "https://registra.example.com/api" },
+  "api": { "baseUrl": "https://registra.neocode.ci/api" },
   "auth": { "apiKeySource": "env", "apiKeyEnvVar": "REGISTRA_API_KEY" },
-  "appstation": { "baseUrl": "https://app-station.example.com", "softwareId": 2 }
+  "appstation": { "baseUrl": "https://app-station.neocode.ci", "softwareId": 2 }
 }
 ```
 
@@ -154,14 +149,14 @@ bookkeeping and is ignored here.
 | Key | Read by | Behaviour |
 |---|---|---|
 | `environment` | `ProjectConfigReader::credentials()` | `"development"` or `"production"` (or absent). **No config/env fallback at all** — a missing file or key always means `"production"`. This is deliberate: letting an env var flip the environment would let a deployer route real licence checks through Registra's permissive sandbox. |
-| `api.baseUrl` | `ProjectConfigReader::credentials()` | Registra's base URL, **including** the trailing `/api` (e.g. `https://registra.neocode.ci/api`). If absent, falls back to `config('aps-connect.registra_base_url')` — but an explicit value here always wins over that fallback. |
-| `appstation.baseUrl` | `ProjectConfigReader::appStationCredentials()` | App Station's **bare domain**, with **no** `/api/v1` suffix (e.g. `https://app-station.neocode.ci`) — `AppStationClient` adds that prefix to every request path itself. If absent, falls back to `config('aps-connect.appstation_base_url')`, same "file always wins" rule. |
+| `api.baseUrl` | `ProjectConfigReader::credentials()` | Registra's base URL, **including** the trailing `/api` (e.g. `https://registra.neocode.ci/api`). **No config/env fallback at all** — if absent, `MissingCredentialsException` is thrown. |
+| `appstation.baseUrl` | `ProjectConfigReader::appStationCredentials()` | App Station's **bare domain**, with **no** `/api/v1` suffix (e.g. `https://app-station.neocode.ci`) — `AppStationClient` adds that prefix to every request path itself. **No config/env fallback at all** — if absent, `MissingCredentialsException` is thrown. |
 
 Both base urls are trust anchors, not mere defaults: which server every licence
 check, registration, download, or update check is sent to determines whether
 those checks mean anything. That's why neither one is ever configurable through
-an environment variable — only through this versioned, publisher-controlled
-file, or the non-`env()` literal fallback described below.
+an environment variable, nor has a config default to fall back to — only this
+versioned, publisher-controlled file can set them.
 
 > [!NOTE]
 > `type` is `"software"` (a standalone application) or `"module"` (an App
@@ -190,58 +185,27 @@ development API key (and a `signingSecret` used by the `aps` CLI's own
 }
 ```
 
-`ProjectConfigReader::credentials()` reads `auth.apiKey` from this file only as
-a last resort, after `config('aps-connect.api_key')` /
-`config('aps-connect.dev_api_key')` — see the precedence table in the next
-section.
+`ProjectConfigReader::credentials()` reads `auth.apiKey` from this file —
+that's the *only* source for the API key. There is no Laravel config or env
+var fallback: if `auth.apiKey` is missing or empty, `MissingCredentialsException`
+is thrown. Run `aps init` to write this file.
 
-### `config/aps-connect.php`
-
-Publish this file (`php artisan vendor:publish --tag="aps-connect-config"`) only
-if you need to change one of these four values:
-
-| Config key | Env var | Default | Purpose |
-|---|---|---|---|
-| `api_key` | `REGISTRA_API_KEY` | `null` | Product API key used when `environment` is `"production"`. |
-| `dev_api_key` | `REGISTRA_DEV_API_KEY` | `null` | Product API key used when `environment` is `"development"`. |
-| `registra_base_url` | — (no env override) | `https://registra.neocode.ci/api` | Fallback for `api.baseUrl` when `appstation.conf.json` doesn't set it. |
-| `appstation_base_url` | — (no env override) | `https://app-station.neocode.ci` | Fallback for `appstation.baseUrl` when `appstation.conf.json` doesn't set it. |
-
-**API key resolution order** (computed once, per request, by
-`ProjectConfigReader::credentials()`):
-
-1. `config('aps-connect.api_key')` (production) or `config('aps-connect.dev_api_key')`
-   (development), depending on `environment` in `appstation.conf.json`.
-2. If that config value is `null`/empty: `auth.apiKey` from
-   `appstation.conf.local.json`.
-3. If neither resolves to a non-empty string: `MissingCredentialsException` is
-   thrown.
-
-The API key is the *one* value that is allowed a config/env override, precisely
-because `appstation.conf.local.json` is gitignored — it simply won't exist in
-most CI/CD pipelines or fresh deployments, so an env var is the only realistic
-way to deliver it there. A wrong or forged key is simply rejected by Registra;
-there's nothing to gain by overriding it, unlike the base urls above.
-
-**Base url resolution order** (for both `registra_base_url` and
-`appstation_base_url`):
-
-1. The explicit value in `appstation.conf.json` (`api.baseUrl` /
-   `appstation.baseUrl`), if present and non-empty.
-2. Otherwise, the literal default in `config/aps-connect.php` — note these two
-   are **not** wrapped in `env()`, unlike the API keys above. Both point at the
-   one real, shared production instance of each service, so there is nothing
-   to gain from letting a deployer's `.env` redirect them.
-3. If neither resolves: `MissingCredentialsException` is thrown (Registra) — App
-   Station's fallback is a hardcoded literal, so this only happens if you
-   explicitly set `config(['aps-connect.appstation_base_url' => null])`
-   yourself.
+Aps Connect ships **no config file at all** — nothing under `aps-connect.*` is
+ever published or read from `config()`. `environment`, `api.baseUrl`, and
+`appstation.baseUrl` come exclusively from `appstation.conf.json`; the API key
+comes exclusively from `appstation.conf.local.json`'s `auth.apiKey`. A missing
+or empty value in either file throws `MissingCredentialsException` rather than
+silently falling back to a value a deployer could edit — run `aps init` (or
+`aps promote`) to write them.
 
 ### Environment & sandbox routing
 
 `environment` in `appstation.conf.json` controls two things:
 
-1. **Which API key** is used (`api_key` vs `dev_api_key` — see above).
+1. **Which API key is expected**: `appstation.conf.local.json` holds whichever
+   key is correct for the current environment — there is never more than one
+   key present in that file at a time, so `auth.apiKey` is read the same way
+   regardless of `environment`.
 2. **Sandbox routing** for a subset of Registra endpoints. `RegistraClient`
    marks certain calls as `sandboxable: true` (`verifyLicence()`,
    `verifyModuleLicence()`, `subscribe()`). When `environment` is
@@ -505,7 +469,7 @@ return redirect($download->url); // expires at $download->expiresAt
 Returns a [`PackageDownload`](#packagedownload): `url`, `expiresAt`, `checksum`
 — verify the downloaded file against `checksum` before installing it.
 
-### `checkForUpdate(string $instanceApiKey, string $currentVersion, ?string $platform = null, ?string $channel = null): UpdateCheckResult`
+### `checkForUpdate(string $instanceApiKey, string $currentVersion, ?string $platform = null, ?string $minStability = null, ?string $currentChannel = null): UpdateCheckResult`
 
 Checks whether a newer release exists for this instance's software. Unlike
 `registerSoftwareInstance()`/`downloadPackage()`, this call has **no licence
@@ -516,14 +480,21 @@ state, so it's safe to call unconditionally on every app startup.
 $update = ApsConnect::checkForUpdate(
     instanceApiKey: decrypt($tenant->app_station_instance_api_key),
     currentVersion: config('app.version'),
-    platform: 'windows', // one of: windows, macos, linux, android, ios, universal
-    channel: 'stable',   // one of: stable, beta, rc, nightly — defaults to stable server-side
+    platform: 'windows',      // one of: windows, macos, linux, android, ios, universal
+    minStability: 'stable',   // least stable channel to consider: nightly, alpha, beta, rc, stable — defaults to stable server-side
+    currentChannel: 'stable', // channel the caller is currently on — defaults to stable server-side
 );
 
 if ($update->updateAvailable) {
     notify_user_update_available($update->latestVersion, $update->url, $update->checksum, $update->signature);
 }
 ```
+
+`minStability` filters out any release published on a less stable channel,
+regardless of version number — pass `'beta'` to also receive beta releases as
+updates, for instance. `currentChannel` only ever lets App Station offer a
+same-*version* upgrade to a *more* stable channel (e.g. `1.0.0-rc` ->
+`1.0.0-stable`), never a regression to a less stable one.
 
 Returns an [`UpdateCheckResult`](#updatecheckresult`): `updateAvailable`,
 `latestVersion`. When `updateAvailable` is true, also: `release` (a full
@@ -583,22 +554,31 @@ class SoftwareInstanceService
 
 ## Marketplace catalogue (App Station)
 
-These methods read App Station's **public** marketplace catalogue — scoped to
-*this* software's own packages, releases, and related taxonomy — the same
-data browsable on the App Station storefront itself. Aps Connect **does not
-expose a way to browse other, unrelated softwares in the marketplace**: your
-integration already knows which software it is, so there's no "list every
-software" or "look up an arbitrary software by slug" method here — only
-methods scoped to your own software's packages and their releases. Unlike
-every method above, the underlying endpoints require **no authentication at
-all** server-side; `AppStationClient` still attaches your product
-`X-Software-Api-Key` header to these requests for consistency, but it's not
-checked. There is nothing to persist here either: call these directly
-wherever you render an in-app "browse add-ons" screen.
+These methods read App Station's **public** marketplace catalogue — the same
+data browsable on the App Station storefront itself, including softwares and
+packages beyond your own. Unlike every method above, the underlying endpoints
+require **no authentication at all** server-side; `AppStationClient` still
+attaches your product `X-Software-Api-Key` header to these requests for
+consistency, but it's not checked. There is nothing to persist here either:
+call these directly wherever you render an in-app "browse marketplace" screen.
 
 Every list method returns a [`Paginated`](#paginatedtitem) wrapper, mirroring
 Laravel's own paginator shape (`items`, `currentPage`, `lastPage`, `perPage`,
 `total`) — pass `page` again yourself to fetch the next page.
+
+### `listSoftwares(array $filters = []): Paginated<Software>`
+
+```php
+$softwares = ApsConnect::listSoftwares(['category_id' => $category->id, 'featured' => true, 'q' => $search, 'sort' => 'recent']);
+```
+
+`$filters` mirrors App Station's own listing query: `category_id`, `featured`,
+`q` (free-text search), `sort` (`popular` (default), `recent`, `rating`, or
+`downloads`), and `page`.
+
+### `getSoftware(string $slug): Software`
+
+Throws `AppStationResourceNotFoundException` for an unknown software slug.
 
 ### `getSoftwareReleases(string $slug, int $page = 1): Paginated<SoftwareRelease>`
 
@@ -684,7 +664,7 @@ same shape as `RegistraRequestException`, deliberately kept separate.
 | `InvalidAppStationApiKeyException` | 401 | — | The product key (`registerSoftwareInstance()`) or the instance key (`downloadPackage()`/`checkForUpdate()`) was rejected or revoked. |
 | `AppStationLicenceRejectedException` | 403 | — | The licence backing the instance/download doesn't allow it (inactive, wrong module entitlement, ...). |
 | `PackageReleaseNotFoundException` | 404 | — | `downloadPackage()` was called with an unknown `$packageReleaseId`. |
-| `AppStationResourceNotFoundException` | 404 | — | A [marketplace catalogue](#marketplace-catalogue-app-station) lookup (`getPackage()`, `getSoftwareReleases()`, `getSoftwarePackages()`, `getPackageReleases()`) was called with an unknown slug. |
+| `AppStationResourceNotFoundException` | 404 | — | A [marketplace catalogue](#marketplace-catalogue-app-station) lookup (`getSoftware()`, `getPackage()`, `getSoftwareReleases()`, `getSoftwarePackages()`, `getPackageReleases()`) was called with an unknown slug. |
 | `AppStationValidationException` | 422 | `errors: array<string, list<string>>` | E.g. a required `moduleLicenceKey` was missing. |
 | `AppStationUnavailableException` | 429 or 503 | `retryAfter: ?int` | Rate-limited or App Station is down. |
 | `AppStationRequestException` | any other status | — | Fallback for anything not mapped above. |
@@ -904,8 +884,8 @@ provider — you won't normally construct these yourself outside of tests.
   models, no cache. If you need to look up "which App Station instance belongs
   to this tenant", that lookup lives in your application's own data model.
 - **Don't try to set `api.baseUrl` through Laravel config or an env var.** It
-  only ever comes from `appstation.conf.json`, with a non-`env()` literal
-  fallback — never from `env()` directly, by design.
+  only ever comes from `appstation.conf.json` — there is no config/env
+  fallback, by design.
 - **Don't catch `RegistraValidationException` expecting to catch an App
   Station failure, or vice versa.** The two hierarchies are intentionally
   separate.

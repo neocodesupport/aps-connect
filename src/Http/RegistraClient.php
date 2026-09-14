@@ -16,12 +16,14 @@ use Neocode\ApsConnect\Exceptions\RegistraRequestException;
 use Neocode\ApsConnect\Exceptions\RegistraUnavailableException;
 use Neocode\ApsConnect\Exceptions\RegistraValidationException;
 
-final class RegistraClient
+final class RegistraClient extends ApiClient
 {
     public function __construct(
         private readonly RegistraCredentials $credentials,
-        private readonly Factory $http,
-    ) {}
+        Factory $http,
+    ) {
+        parent::__construct($http);
+    }
 
     /**
      * @param  array<string, mixed>  $query
@@ -62,10 +64,7 @@ final class RegistraClient
 
     private function request(): PendingRequest
     {
-        return $this->http
-            ->baseUrl(rtrim($this->credentials->baseUrl, '/'))
-            ->withHeaders(['X-Software-Api-Key' => $this->credentials->apiKey])
-            ->acceptJson();
+        return $this->buildRequest($this->credentials->baseUrl, $this->credentials->apiKey);
     }
 
     /**
@@ -73,14 +72,11 @@ final class RegistraClient
      */
     private function handle(Response $response): array
     {
-        $body = $response->json();
-        $body = is_array($body) ? $body : [];
+        [$body, $message] = $this->decode($response, 'Registra');
 
         if ($response->successful()) {
             return $body;
         }
-
-        $message = is_string($body['message'] ?? null) ? $body['message'] : "Registra request failed with status {$response->status()}.";
 
         throw match ($response->status()) {
             401 => new InvalidApiKeyException($message, $response->status(), $body),
@@ -91,12 +87,5 @@ final class RegistraClient
             429, 503 => new RegistraUnavailableException($message, $response->status(), $body, $this->retryAfter($response)),
             default => new RegistraRequestException($message, $response->status(), $body),
         };
-    }
-
-    private function retryAfter(Response $response): ?int
-    {
-        $header = $response->header('Retry-After');
-
-        return $header === '' ? null : (int) $header;
     }
 }

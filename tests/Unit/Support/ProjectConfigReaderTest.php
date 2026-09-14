@@ -24,11 +24,6 @@ function writeApsConnectProjectFixtures(string $basePath, ?array $projectConfig,
 beforeEach(function () {
     $this->basePath = sys_get_temp_dir().'/aps-connect-tests-'.uniqid();
     mkdir($this->basePath, recursive: true);
-
-    config([
-        'aps-connect.api_key' => null,
-        'aps-connect.dev_api_key' => null,
-    ]);
 });
 
 afterEach(function () {
@@ -39,60 +34,40 @@ afterEach(function () {
     rmdir($this->basePath);
 });
 
-it('resolves credentials entirely from the project files when no config override is set', function () {
+it('resolves credentials entirely from the project files', function () {
     writeApsConnectProjectFixtures(
         $this->basePath,
-        ['environment' => 'development', 'api' => ['baseUrl' => 'https://registra.example.com/api']],
+        ['environment' => 'development', 'api' => ['baseUrl' => 'https://registra.neocode.ci/api']],
         ['auth' => ['apiKey' => 'from-local-file']],
     );
 
     $credentials = (new ProjectConfigReader($this->basePath))->credentials();
 
     expect($credentials->apiKey)->toBe('from-local-file');
-    expect($credentials->baseUrl)->toBe('https://registra.example.com/api');
+    expect($credentials->baseUrl)->toBe('https://registra.neocode.ci/api');
     expect($credentials->environment)->toBe('development');
 });
 
-it('prefers explicit config over the project files for the api key only', function () {
+it('never lets a stray config value override the api key from appstation.conf.local.json', function () {
     writeApsConnectProjectFixtures(
         $this->basePath,
-        ['environment' => 'development', 'api' => ['baseUrl' => 'https://registra.example.com/api']],
+        ['environment' => 'production', 'api' => ['baseUrl' => 'https://registra.neocode.ci/api']],
         ['auth' => ['apiKey' => 'from-local-file']],
     );
 
-    config(['aps-connect.dev_api_key' => 'from-config']);
+    config(['aps-connect.api_key' => 'should-be-ignored']);
 
     $credentials = (new ProjectConfigReader($this->basePath))->credentials();
 
-    expect($credentials->apiKey)->toBe('from-config');
+    expect($credentials->apiKey)->toBe('from-local-file');
 });
 
-it('never lets a config default override an explicit base url in the project file, to prevent redirecting licence checks to a rogue server', function () {
+it('uses the development environment declared in the project file', function () {
     writeApsConnectProjectFixtures(
         $this->basePath,
-        ['environment' => 'production', 'api' => ['baseUrl' => 'https://registra.example.com/api']],
-        ['auth' => ['apiKey' => 'prod-key']],
+        ['environment' => 'development', 'api' => ['baseUrl' => 'https://registra.neocode.ci/api']],
+        ['auth' => ['apiKey' => 'dev-key']],
     );
-
-    // appstation.conf.json already declares an explicit api.baseUrl above —
-    // this simulates something (a deployer's own service provider, a stray
-    // env var read elsewhere) setting the config default anyway at runtime,
-    // and confirms it never overrides the explicit, versioned file value.
-    config(['aps-connect.registra_base_url' => 'https://attacker.example/api']);
-
-    $credentials = (new ProjectConfigReader($this->basePath))->credentials();
-
-    expect($credentials->baseUrl)->toBe('https://registra.example.com/api');
-});
-
-it('uses the dev api key when the project file declares the development environment', function () {
-    writeApsConnectProjectFixtures(
-        $this->basePath,
-        ['environment' => 'development', 'api' => ['baseUrl' => 'https://registra.example.com/api']],
-        null,
-    );
-
-    config(['aps-connect.dev_api_key' => 'dev-key', 'aps-connect.api_key' => 'prod-key']);
 
     $credentials = (new ProjectConfigReader($this->basePath))->credentials();
 
@@ -100,14 +75,12 @@ it('uses the dev api key when the project file declares the development environm
     expect($credentials->apiKey)->toBe('dev-key');
 });
 
-it('uses the production api key when the project file declares the production environment', function () {
+it('uses the production environment declared in the project file', function () {
     writeApsConnectProjectFixtures(
         $this->basePath,
-        ['environment' => 'production', 'api' => ['baseUrl' => 'https://registra.example.com/api']],
-        null,
+        ['environment' => 'production', 'api' => ['baseUrl' => 'https://registra.neocode.ci/api']],
+        ['auth' => ['apiKey' => 'prod-key']],
     );
-
-    config(['aps-connect.dev_api_key' => 'dev-key', 'aps-connect.api_key' => 'prod-key']);
 
     $credentials = (new ProjectConfigReader($this->basePath))->credentials();
 
@@ -116,9 +89,11 @@ it('uses the production api key when the project file declares the production en
 });
 
 it('defaults to production when the project file does not declare an environment', function () {
-    writeApsConnectProjectFixtures($this->basePath, ['api' => ['baseUrl' => 'https://registra.example.com/api']], null);
-
-    config(['aps-connect.api_key' => 'prod-key']);
+    writeApsConnectProjectFixtures(
+        $this->basePath,
+        ['api' => ['baseUrl' => 'https://registra.neocode.ci/api']],
+        ['auth' => ['apiKey' => 'prod-key']],
+    );
 
     $credentials = (new ProjectConfigReader($this->basePath))->credentials();
 
@@ -126,32 +101,39 @@ it('defaults to production when the project file does not declare an environment
 });
 
 it('throws when no api key can be resolved', function () {
-    writeApsConnectProjectFixtures($this->basePath, ['api' => ['baseUrl' => 'https://registra.example.com/api']], null);
+    writeApsConnectProjectFixtures($this->basePath, ['api' => ['baseUrl' => 'https://registra.neocode.ci/api']], null);
 
     (new ProjectConfigReader($this->basePath))->credentials();
 })->throws(MissingCredentialsException::class);
 
-it('falls back to the config default when the project file has no api.baseUrl', function () {
+it('throws when appstation.conf.local.json has no auth.apiKey', function () {
+    writeApsConnectProjectFixtures(
+        $this->basePath,
+        ['api' => ['baseUrl' => 'https://registra.neocode.ci/api']],
+        ['auth' => []],
+    );
+
+    (new ProjectConfigReader($this->basePath))->credentials();
+})->throws(MissingCredentialsException::class);
+
+it('throws when the project file has no api.baseUrl, since the base url has no config/env fallback', function () {
     writeApsConnectProjectFixtures($this->basePath, ['environment' => 'production'], ['auth' => ['apiKey' => 'a-key']]);
 
-    $credentials = (new ProjectConfigReader($this->basePath))->credentials();
+    (new ProjectConfigReader($this->basePath))->credentials();
+})->throws(MissingCredentialsException::class);
 
-    expect($credentials->baseUrl)->toBe(config('aps-connect.registra_base_url'));
-});
+it('throws when there is no project file at all, since the base url has no config/env fallback', function () {
+    writeApsConnectProjectFixtures($this->basePath, null, ['auth' => ['apiKey' => 'prod-key']]);
 
-it('falls back to the config default when there is no project file at all', function () {
-    config(['aps-connect.api_key' => 'prod-key']);
+    (new ProjectConfigReader($this->basePath))->credentials();
+})->throws(MissingCredentialsException::class);
 
-    $credentials = (new ProjectConfigReader($this->basePath))->credentials();
-
-    expect($credentials->baseUrl)->toBe(config('aps-connect.registra_base_url'));
-    expect($credentials->environment)->toBe('production');
-});
-
-it('throws when neither the project file nor the config default provide a base url', function () {
-    writeApsConnectProjectFixtures($this->basePath, ['environment' => 'production'], ['auth' => ['apiKey' => 'a-key']]);
-
-    config(['aps-connect.registra_base_url' => null]);
+it('throws when api.baseUrl is not the expected object shape', function () {
+    writeApsConnectProjectFixtures(
+        $this->basePath,
+        ['environment' => 'production', 'api' => 'https://registra.neocode.ci/api'],
+        ['auth' => ['apiKey' => 'a-key']],
+    );
 
     (new ProjectConfigReader($this->basePath))->credentials();
 })->throws(MissingCredentialsException::class);
@@ -161,66 +143,50 @@ it('resolves App Station credentials from the project file, reusing the Registra
         $this->basePath,
         [
             'environment' => 'production',
-            'api' => ['baseUrl' => config('aps-connect.registra_base_url')],
-            'appstation' => ['baseUrl' => 'https://app-station.example.com'],
+            'api' => ['baseUrl' => 'https://registra.neocode.ci/api'],
+            'appstation' => ['baseUrl' => 'https://app-station.neocode.ci'],
         ],
         null,
     );
 
-    $registraCredentials = new RegistraCredentials('product-key', config('aps-connect.registra_base_url'), 'production');
+    $registraCredentials = new RegistraCredentials('product-key', 'https://registra.neocode.ci/api', 'production');
 
     $credentials = (new ProjectConfigReader($this->basePath))->appStationCredentials($registraCredentials);
 
     expect($credentials->apiKey)->toBe('product-key');
-    expect($credentials->baseUrl)->toBe('https://app-station.example.com');
+    expect($credentials->baseUrl)->toBe('https://app-station.neocode.ci');
 });
 
-it('never lets a config default override an explicit App Station base url in the project file, to prevent redirecting distribution calls to a rogue server', function () {
+it('throws when the project file has no appstation.baseUrl, since the base url has no config/env fallback', function () {
+    writeApsConnectProjectFixtures(
+        $this->basePath,
+        ['environment' => 'production', 'api' => ['baseUrl' => 'https://registra.neocode.ci/api']],
+        null,
+    );
+
+    $registraCredentials = new RegistraCredentials('product-key', 'https://registra.neocode.ci/api', 'production');
+
+    (new ProjectConfigReader($this->basePath))->appStationCredentials($registraCredentials);
+})->throws(MissingCredentialsException::class);
+
+it('throws when there is no project file at all for App Station credentials', function () {
+    $registraCredentials = new RegistraCredentials('product-key', 'https://registra.neocode.ci/api', 'production');
+
+    (new ProjectConfigReader($this->basePath))->appStationCredentials($registraCredentials);
+})->throws(MissingCredentialsException::class);
+
+it('throws when appstation.baseUrl is not the expected object shape', function () {
     writeApsConnectProjectFixtures(
         $this->basePath,
         [
             'environment' => 'production',
-            'api' => ['baseUrl' => config('aps-connect.registra_base_url')],
-            'appstation' => ['baseUrl' => 'https://app-station.example.com'],
+            'api' => ['baseUrl' => 'https://registra.neocode.ci/api'],
+            'appstation' => 'https://app-station.neocode.ci',
         ],
         null,
     );
 
-    config(['aps-connect.appstation_base_url' => 'https://attacker.example/api']);
-
-    $registraCredentials = new RegistraCredentials('product-key', config('aps-connect.registra_base_url'), 'production');
-
-    $credentials = (new ProjectConfigReader($this->basePath))->appStationCredentials($registraCredentials);
-
-    expect($credentials->baseUrl)->toBe('https://app-station.example.com');
-});
-
-it('falls back to the config default when the project file has no appstation.baseUrl', function () {
-    writeApsConnectProjectFixtures(
-        $this->basePath,
-        ['environment' => 'production', 'api' => ['baseUrl' => config('aps-connect.registra_base_url')]],
-        null,
-    );
-
-    $registraCredentials = new RegistraCredentials('product-key', config('aps-connect.registra_base_url'), 'production');
-
-    $credentials = (new ProjectConfigReader($this->basePath))->appStationCredentials($registraCredentials);
-
-    expect($credentials->baseUrl)->toBe(config('aps-connect.appstation_base_url'));
-});
-
-it('falls back to the config default when there is no project file at all for App Station credentials', function () {
-    $registraCredentials = new RegistraCredentials('product-key', config('aps-connect.registra_base_url'), 'production');
-
-    $credentials = (new ProjectConfigReader($this->basePath))->appStationCredentials($registraCredentials);
-
-    expect($credentials->baseUrl)->toBe(config('aps-connect.appstation_base_url'));
-});
-
-it('throws when neither the project file nor the config default provide an App Station base url', function () {
-    config(['aps-connect.appstation_base_url' => null]);
-
-    $registraCredentials = new RegistraCredentials('product-key', config('aps-connect.registra_base_url'), 'production');
+    $registraCredentials = new RegistraCredentials('product-key', 'https://registra.neocode.ci/api', 'production');
 
     (new ProjectConfigReader($this->basePath))->appStationCredentials($registraCredentials);
 })->throws(MissingCredentialsException::class);
