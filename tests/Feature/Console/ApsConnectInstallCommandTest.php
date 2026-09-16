@@ -97,7 +97,15 @@ it('defaults to sqlite without prompting when non-interactive and no db-connecti
 it('finishes installation on the second run once .env already exists', function () {
     Event::fake();
 
+    // .env here only needs to make envExists() see the "second run" state —
+    // it's written to the isolated EnvironmentFileInstaller path above, not
+    // the real booted app's own .env, so config('app.key') must be set
+    // directly too: finishInstall() reads the real app's config, and an
+    // empty key there would make it call key:generate for real against
+    // this test app's actual .env (which may not exist in a fresh CI
+    // checkout of the Testbench skeleton — see PR #2's failing build).
     file_put_contents($this->basePath.'/.env', "APP_NAME=Test\nAPP_KEY=base64:".base64_encode('x'.str_repeat('y', 31))."\n");
+    config(['app.key' => 'base64:'.base64_encode('x'.str_repeat('y', 31))]);
 
     $this->artisan('aps-connect:install')
         ->expectsOutputToContain('Installation terminée')
@@ -110,7 +118,15 @@ it('finishes installation on the second run once .env already exists', function 
 it('skips migration when --no-migrate is passed', function () {
     Event::fake();
 
+    // .env here only needs to make envExists() see the "second run" state —
+    // it's written to the isolated EnvironmentFileInstaller path above, not
+    // the real booted app's own .env, so config('app.key') must be set
+    // directly too: finishInstall() reads the real app's config, and an
+    // empty key there would make it call key:generate for real against
+    // this test app's actual .env (which may not exist in a fresh CI
+    // checkout of the Testbench skeleton — see PR #2's failing build).
     file_put_contents($this->basePath.'/.env', "APP_NAME=Test\nAPP_KEY=base64:".base64_encode('x'.str_repeat('y', 31))."\n");
+    config(['app.key' => 'base64:'.base64_encode('x'.str_repeat('y', 31))]);
 
     $this->artisan('aps-connect:install', ['--no-migrate' => true])
         ->doesntExpectOutputToContain('Migration de la base de données')
