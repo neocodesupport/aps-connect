@@ -26,7 +26,7 @@ function apsConnectInstallCommandRemoveDir(string $dir): void
 }
 
 beforeEach(function () {
-    $this->basePath = sys_get_temp_dir().'/aps-connect-install-cmd-tests-'.uniqid();
+    $this->basePath = sys_get_temp_dir().'/aps-connect-install-cmd-tests-'.bin2hex(random_bytes(8));
     mkdir($this->basePath, recursive: true);
 
     app()->singleton(EnvironmentFileInstaller::class, fn () => new EnvironmentFileInstaller($this->basePath));

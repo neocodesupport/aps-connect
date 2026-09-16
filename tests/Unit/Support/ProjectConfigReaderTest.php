@@ -22,7 +22,7 @@ function writeApsConnectProjectFixtures(string $basePath, ?array $projectConfig,
 }
 
 beforeEach(function () {
-    $this->basePath = sys_get_temp_dir().'/aps-connect-tests-'.uniqid();
+    $this->basePath = sys_get_temp_dir().'/aps-connect-tests-'.bin2hex(random_bytes(8));
     mkdir($this->basePath, recursive: true);
 });
 

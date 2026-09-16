@@ -16,7 +16,7 @@ beforeEach(function () {
     $this->credentials = new PublisherCredentials('session-token', $this->baseUrl);
     $this->client = new PublisherClient($this->credentials, app(Factory::class));
 
-    $this->filePath = sys_get_temp_dir().'/aps-connect-publisher-client-test-'.uniqid().'.zip';
+    $this->filePath = sys_get_temp_dir().'/aps-connect-publisher-client-test-'.bin2hex(random_bytes(8)).'.zip';
     file_put_contents($this->filePath, 'fake-zip-contents');
 });
 

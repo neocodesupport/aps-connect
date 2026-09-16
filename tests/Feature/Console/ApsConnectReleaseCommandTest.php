@@ -27,7 +27,7 @@ function apsConnectReleaseCommandFakeReleaseResponse(array $overrides = []): arr
 }
 
 beforeEach(function () {
-    $this->basePath = sys_get_temp_dir().'/aps-connect-release-cmd-tests-'.uniqid();
+    $this->basePath = sys_get_temp_dir().'/aps-connect-release-cmd-tests-'.bin2hex(random_bytes(8));
     mkdir($this->basePath, recursive: true);
 
     file_put_contents($this->basePath.'/appstation.conf.json', json_encode(apsConnectReleaseCommandSoftwareConfig()));

@@ -47,7 +47,7 @@ function apsConnectReadZipEntries(string $zipPath): array
 }
 
 beforeEach(function () {
-    $this->projectDir = sys_get_temp_dir().'/aps-connect-pack-tests-'.uniqid();
+    $this->projectDir = sys_get_temp_dir().'/aps-connect-pack-tests-'.bin2hex(random_bytes(8));
     mkdir($this->projectDir, recursive: true);
 
     file_put_contents($this->projectDir.'/composer.json', '{}');

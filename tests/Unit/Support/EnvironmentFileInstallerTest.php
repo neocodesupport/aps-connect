@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Neocode\ApsConnect\Support\EnvironmentFileInstaller;
 
 beforeEach(function () {
-    $this->basePath = sys_get_temp_dir().'/aps-connect-env-installer-tests-'.uniqid();
+    $this->basePath = sys_get_temp_dir().'/aps-connect-env-installer-tests-'.bin2hex(random_bytes(8));
     mkdir($this->basePath, recursive: true);
 
     $this->installer = new EnvironmentFileInstaller($this->basePath);
