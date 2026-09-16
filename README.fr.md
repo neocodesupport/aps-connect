@@ -17,8 +17,14 @@
 Un client Laravel sans état pour la vérification de licences via
 [Registra](https://registra.neocode.ci) et la distribution/mise à jour
 automatique de logiciels via App Station, exposé via une seule façade
-`ApsConnect`. Le package ne persiste jamais rien lui-même — c'est à votre
-application de stocker les clés API et les résultats qu'il retourne.
+`ApsConnect`. Chaque méthode runtime (tout ce qui est sous [Licences](#licences-registra),
+[Distribution & mise à jour automatique](#distribution--mise-à-jour-automatique-app-station)
+et [Catalogue marketplace](#catalogue-marketplace-app-station) ci-dessous) ne
+persiste jamais rien elle-même — c'est à votre application de stocker les
+clés API et les résultats qu'elle retourne. La commande
+[`aps-connect:release`](#packaging--publication-dune-release-app-station)
+est l'unique exception : elle construit volontairement un zip de release
+sur disque et le publie — voir cette section pour ce que ça implique.
 
 ## Sommaire
 
@@ -61,6 +67,11 @@ application de stocker les clés API et les résultats qu'il retourne.
   - [Exceptions App Station](#exceptions-app-station)
   - [Erreurs de résolution des credentials](#erreurs-de-résolution-des-credentials)
 - [La commande `aps-connect:doctor`](#la-commande-aps-connectdoctor)
+- [Packaging & publication d'une release (App Station)](#packaging--publication-dune-release-app-station)
+  - [`--pack`](#--pack)
+  - [`--publish`](#--publish)
+  - [Obfuscation du code source : ce qui est protégé, et ce qui ne l'est pas](#obfuscation-du-code-source--ce-qui-est-protégé-et-ce-qui-ne-lest-pas)
+  - [Installer (ou mettre à jour) sur un serveur client](#installer-ou-mettre-à-jour-sur-un-serveur-client)
 - [Tester votre intégration](#tester-votre-intégration)
 - [Référence des Data Transfer Objects](#référence-des-data-transfer-objects)
 - [Notes de conception & anti-patterns](#notes-de-conception--anti-patterns)
@@ -88,10 +99,14 @@ composer require neocode/aps-connect
 ```
 
 Il n'y a rien à publier : aucun fichier de config, aucune migration, vue,
-traduction ou asset public. Le package est un pur client HTTP — il ne touche
-jamais à votre base de données ni à votre frontend, et chaque credential vient
-exclusivement de `appstation.conf.json` / `appstation.conf.local.json` (voir
-[Configuration](#configuration) ci-dessous).
+traduction ou asset public. Chaque méthode runtime est un simple appel
+HTTP — aucune ne touche à votre base de données ni à votre frontend, et
+chaque credential vient exclusivement de `appstation.conf.json` /
+`appstation.conf.local.json` (voir [Configuration](#configuration)
+ci-dessous). `aps-connect:release` (voir
+[Packaging & publication d'une release](#packaging--publication-dune-release-app-station))
+est de l'outillage de développement, pas cette surface runtime — elle
+écrit bien un zip sur disque et lance `composer`/`npm`.
 
 ## Comment ça marche
 
@@ -729,6 +744,203 @@ effet de bord à sonder avec une valeur jetable.
 Le code de sortie est `0` en cas de succès, `1` si la clé API est rejetée à
 l'une des étapes.
 
+## Packaging & publication d'une release (App Station)
+
+Une commande de développement, `aps-connect:release`, couvre la partie de la
+publication d'une release qui se répète à chaque version : transformer le
+projet en artefact publiable, puis le publier. Tout le reste — lier le
+dépôt, s'authentifier, signer un manifeste de liaison, faire tourner les
+clés — reste dans le
+[CLI `aps`](https://www.npmjs.com/package/@app-station/cli) (`aps login`,
+`aps init`, `aps sign`, `aps fetch-key`, ...) ; cette commande prend le
+relais là où `aps init` s'arrête, en lisant le même `appstation.conf.json`
+qu'il a écrit.
+
+Lancée sans flag, elle demande d'abord quoi faire (empaqueter et publier,
+empaqueter seulement, ou publier un fichier existant), puis pose une
+question à la fois pour tout ce qu'il lui manque encore — version, channel,
+plateforme, quel fichier, le token — uniquement pour les champs que vous
+n'avez pas déjà passés en option. Passez `--pack`/`--publish` (l'un ou
+l'autre, ou les deux) pour sauter directement cette première question ;
+passez toutes les options nécessaires et elle tourne sans aucune question,
+ce qu'on veut en CI (ajoutez `--no-interaction` là aussi, comme pour
+n'importe quelle commande Artisan — chaque champ retombe alors sur sa
+valeur par défaut ou échoue avec un message clair plutôt que de demander).
+
+```bash
+# entièrement interactif
+php artisan aps-connect:release
+
+# construire le zip seulement
+php artisan aps-connect:release --pack [--out=] [--skip-npm] [--build-command=] [--no-obfuscate]
+
+# publier un fichier existant seulement
+php artisan aps-connect:release <file> --publish \
+    --release-version=1.4.0 [--channel=stable] [--platform=universal] \
+    [--notes=] [--min-software-version=] [--max-software-version=] \
+    [--upload-name=] [--token=]
+
+# construire puis publier en une fois (CI)
+php artisan aps-connect:release --pack --publish --release-version=1.4.0 --token=$APS_TOKEN --no-interaction
+```
+
+### `--pack`
+
+Construit un zip prêt à déployer du projet courant :
+
+1. Copie le projet dans un répertoire temporaire — **jamais sur place** :
+   lancer `composer install --no-dev` directement dans votre copie de
+   travail supprimerait vos propres dépendances de dev. Exclut `.git`,
+   `.github`, `.idea`, `.vscode`, `node_modules`, `tests`, `storage/logs`,
+   `storage/framework/{cache,sessions,views}`, `.phpunit.cache`, `*.log`,
+   `.DS_Store`, plus tout ce qu'ajoute un fichier `.apsignore` à la racine
+   du projet (un motif glob par ligne — un motif sans `/` correspond à ce
+   nom n'importe où dans l'arborescence ; un motif contenant `/` est ancré à
+   la racine du projet). **`.env*` et `appstation.conf.local.json` sont
+   toujours exclus, quel que soit `.apsignore`** — ils contiennent des
+   secrets (votre clé API Registra de dev, le secret de signature `aps
+   sign`) qui ne doivent jamais finir dans un artefact publié.
+2. Lance `composer install --no-dev --optimize-autoloader --no-interaction`
+   dans la copie mise en scène.
+3. Si un `package.json` est présent et que `--skip-npm` n'a pas été passé :
+   lance `npm ci && npm run build` (à surcharger avec `--build-command=`).
+4. Obfusque le code PHP mis en scène (voir ci-dessous), sauf si
+   `--no-obfuscate` est passé.
+5. Zippe le résultat vers `--out=` (par défaut :
+   `storage/app/aps-connect/releases/{slug}-{date}.zip`).
+
+Ceci automatise uniquement un zip source web Laravel classique. Ça
+n'orchestre **pas** un build natif [NativePHP](https://nativephp.com) — si
+vous publiez un installeur NativePHP, construisez-le avec l'outillage propre
+à NativePHP et passez directement le fichier obtenu à `--publish`
+ci-dessous, exactement comme `aps release <file>` traite déjà n'importe
+quel fichier de façon opaque.
+
+### `--publish`
+
+Publie n'importe quel fichier (typiquement le zip que `--pack` vient de
+construire, mais un installeur NativePHP fonctionne tout aussi bien) vers
+`POST /api/v1/publisher/{softwares,packages}/{id}/releases`, en reproduisant
+la même validation que `aps release <file>` (semver, `--channel`
+stable|beta|rc|nightly, `--platform`
+windows|macos|linux|android|ios|web|cli|browser_extension|universal ;
+`--min-software-version`/`--max-software-version` uniquement pour un
+module). Combiné avec `--pack`, c'est le fichier que `--pack` vient de
+produire qui est utilisé — l'argument `<file>` n'est lu que quand
+`--publish` tourne sans `--pack`.
+
+L'authentification utilise un **token de session éditeur**, pas la clé API
+Registra runtime — passez `--token`, définissez la variable d'environnement
+`APS_TOKEN`, ou lancez `aps login` (`aps-cli`) et exportez le token qu'il
+affiche (en mode interactif, il est aussi demandé via un prompt masqué
+`secret()`). Il n'y a pas de flow de connexion navigateur ici ; ça reste
+dans `aps-cli`, puisque c'est une action ponctuelle par machine, pas
+quelque chose qui vaut la peine d'être réimplémenté en PHP.
+
+En cas de succès, affiche le checksum de la release et — une fois qu'App
+Station l'a calculée — sa signature HMAC ; avertit si la signature n'est pas
+encore disponible (App Station la calcule rétroactivement dès qu'un secret
+de signature existe pour le logiciel).
+
+### Obfuscation du code source : ce qui est protégé, et ce qui ne l'est pas
+
+Par défaut, `--pack` fait passer chaque fichier `.php` mis en scène (sauf
+`vendor/**`, jamais touché) dans un obfuscateur avant de zipper. Ça existe
+parce qu'une vérification de licence qu'un client peut
+simplement supprimer du code source —`ApsConnect::verifyLicence()`, la
+vérification de signature de `checkForUpdate()` — n'est plus vraiment une
+vérification de licence. C'est un **frein contre le bidouillage/l'édition
+occasionnels, pas une vraie sécurité** :
+
+- **Ce que ça fait :** supprime tous les commentaires et docblocks, et
+  renomme les variables locales partout où c'est prouvablement sûr (un nom
+  est laissé tel quel s'il est passé à `compact()`, déclaré `global`, capturé
+  par un `use()` de closure, ou si la fonction contenante utilise
+  `extract()`/`$$x` du tout).
+- **Ce que ça ne touche jamais :** les noms de classes, méthodes,
+  propriétés et namespaces. Laravel les résout en permanence via la
+  réflexion et des chaînes magiques — le conteneur de services, Eloquent, le
+  route model binding, les conventions `handle()` des jobs/listeners, les
+  arguments nommés — et renommer automatiquement l'un d'eux risquerait de
+  casser silencieusement votre appli chez un client, un résultat bien pire
+  qu'une protection simplement faible.
+
+Ça s'arrête volontairement avant le niveau de protection d'ionCube/Zend
+Guard, qui nécessite une extension loader installée sur le serveur cible —
+pas quelque chose qu'on peut supposer sur un hébergement quelconque côté
+client. Si vous avez besoin d'une vraie protection contre un attaquant
+motivé plutôt que d'un frein contre le bidouillage occasionnel, c'est un
+investissement différent et séparé (un composant compilé pour uniquement la
+vérification de licence, ou exiger ionCube sur des hébergements que vous
+contrôlez) — `--no-obfuscate` existe pour que vous puissiez quand même
+brancher votre propre étape avant `--publish` si vous
+partez dans cette direction.
+
+### Installer (ou mettre à jour) sur un serveur client
+
+`--pack` exclut volontairement `.env*` du zip (c'est un secret), donc un
+client qui l'extrait ne peut pas encore faire démarrer l'appli.
+`aps-connect:install` termine le travail :
+
+```bash
+php artisan aps-connect:install
+```
+
+C'est aussi le chemin de **mise à jour** : relancez-la après avoir extrait
+une nouvelle release par-dessus une installation existante (même `.env`) et
+elle va directement à `migrate --force`/`storage:link` — pas besoin de
+commande "update" séparée.
+
+**Ça prend deux lancements la première fois**, et c'est voulu, pas un bug
+à contourner : Laravel résout `config('database.connections.*')` depuis
+`.env` au boot, avant même que cette commande ne tourne — donc écrire de
+nouvelles valeurs `DB_*` dans `.env` en cours de route ne peut pas changer
+rétroactivement la connexion DB que `migrate` utiliserait dans ce *même*
+processus. Plutôt que de surcharger `config()`/`putenv()` à l'exécution
+d'une façon facile à mal faire, la commande s'arrête simplement et demande
+un second lancement une fois qu'un vrai redémarrage a pris en compte le
+nouveau `.env` :
+
+1. **Premier lancement** (`.env` manquant) — copie `.env.example` (ou
+   écrit un template minimal s'il n'y en a pas), demande `APP_URL` et une
+   connexion DB (`sqlite` par défaut — rien d'autre à demander ;
+   `mysql`/`pgsql` demandent aussi host/port/database/username/password),
+   les écrit dans `.env`, et s'arrête avec un message pour relancer la
+   commande.
+2. **Second lancement** (`.env` existe maintenant) — génère `APP_KEY` s'il
+   est vide, lance `migrate --force`, puis `storage:link`, dans cet ordre.
+
+Chaque champ peut être fourni en option plutôt que demandé (`--app-url=`,
+`--db-connection=`, `--db-host=`, `--db-port=`, `--db-database=`,
+`--db-username=`, `--db-password=`) — avec `--no-interaction`, un premier
+déploiement scripté tient en une ligne :
+
+```bash
+php artisan aps-connect:install --no-interaction \
+    --app-url=https://mon-logiciel.exemple.com \
+    --db-connection=mysql --db-host=127.0.0.1 --db-database=app \
+    --db-username=app --db-password="$DB_PASSWORD"
+```
+
+`--no-migrate`/`--no-storage-link` sautent ces deux étapes individuellement.
+
+Deux events sont émis — `Neocode\ApsConnect\Events\ApsConnectInstalling` au
+début de *chaque* lancement (y compris un lancement qui se contente
+d'écrire `.env`), et `Neocode\ApsConnect\Events\ApsConnectInstalled` une
+fois que migrations/storage:link ont vraiment tourné. C'est le point
+d'extension pour les propres étapes post-install d'un logiciel (seed d'un
+compte admin, réchauffement d'un cache...) — le package n'expose aucun
+fichier de config pour déclarer ça, par conception, donc un listener dans
+votre propre `EventServiceProvider` est la façon de s'y brancher :
+
+```php
+use Neocode\ApsConnect\Events\ApsConnectInstalled;
+
+Event::listen(ApsConnectInstalled::class, function (): void {
+    // ex. Artisan::call('app:seed-admin-account');
+});
+```
+
 ## Tester votre intégration
 
 Aps Connect est conçu pour être testé avec `Http::fake()` — chaque exemple
@@ -909,10 +1121,13 @@ des tests. `RegistraCredentials` : `apiKey: string`, `baseUrl: string`,
   toute nouvelle instance App Station et une nouvelle clé API, orphelinant
   les précédentes côté serveur. Enregistrez une fois, persistez le résultat,
   rejouez-le.
-- **N'attendez pas de ce package qu'il persiste quoi que ce soit pour vous.**
-  Aucune migration, aucun modèle, aucun cache. Si vous devez retrouver « quelle
-  instance App Station appartient à ce tenant », cette recherche vit dans le
-  modèle de données de votre propre application.
+- **N'attendez pas de la façade runtime (`ApsConnect::...`) qu'elle persiste
+  quoi que ce soit pour vous.** Aucune migration, aucun modèle, aucun cache.
+  Si vous devez retrouver « quelle instance App Station appartient à ce
+  tenant », cette recherche vit dans le modèle de données de votre propre
+  application. `aps-connect:release --pack` est l'unique exception délibérée —
+  elle écrit un zip sur disque par conception ; voir
+  [Packaging & publication d'une release](#packaging--publication-dune-release-app-station).
 - **N'essayez pas de définir `api.baseUrl` via la config Laravel ou une
   variable d'env.** Elle ne vient toujours que de `appstation.conf.json` — il
   n'y a aucun repli config/env, par design.

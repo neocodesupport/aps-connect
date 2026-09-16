@@ -160,6 +160,75 @@ php artisan aps-connect:doctor
 Resolves Registra credentials and confirms the configured API key is accepted. This
 command only checks the Registra connection, not App Station.
 
+### 6. Package and publish a release
+
+```bash
+php artisan aps-connect:release
+```
+
+The one command that writes to disk and calls an external API by design (unlike
+every runtime method above). Run with no flags, it asks what to do first (pack and
+publish, pack only, or publish an existing file), then prompts for whatever it still
+needs — version, channel, platform, which file, the token — one question at a time,
+skipping any field already given as an option. Pass `--pack`/`--publish` to skip the
+first question; give every option a field needs (plus `--no-interaction`) to run with
+no prompts at all, e.g. in CI.
+
+```bash
+# fully interactive
+php artisan aps-connect:release
+
+# CI: build then publish in one shot, no prompts
+php artisan aps-connect:release --pack --publish \
+    --release-version=1.4.0 --token=$APS_TOKEN --no-interaction
+```
+
+`--pack` stages an excluded copy of the project (never in place), runs `composer
+install --no-dev --optimize-autoloader`, an optional `npm ci && npm run build` if
+`package.json` is present, obfuscates the staged `.php` files (strips comments,
+renames local variables where provably safe — skip with `--no-obfuscate`), then
+zips it. `.env*` and `appstation.conf.local.json` are always excluded, regardless of
+a project's own `.apsignore`.
+
+`--publish` uploads any file (the zip `--pack` just built, or a pre-built NativePHP
+installer) to App Station's publisher release API — `--release-version` (semver) is
+required, `--channel`/`--platform` default to `stable`/`universal`. Authentication is
+a **publisher session token** (`--token`, `APS_TOKEN`, or `aps login` via `aps-cli`),
+not the runtime Registra API key from step 2.
+
+This command requires the same `appstation.conf.json` from step 2, plus its `type`
+(`software`/`module`) and the linked `appstation.softwareId`/`packageId` — all
+written by `aps init`.
+
+### 7. Install/update on a customer server
+
+```bash
+php artisan aps-connect:install
+```
+
+Run by the *customer*, after extracting an `aps-connect:release --pack` zip —
+`.env*` is excluded from that zip on purpose, so the app can't boot until this
+runs. Same command handles updates: when `.env` already exists it skips straight
+to `key:generate` (if needed)/`migrate --force`/`storage:link`.
+
+**Takes two runs the first time, by design**: `.env` doesn't exist yet on run 1,
+so it prompts for `APP_URL`/DB connection, writes `.env`, and stops — a fresh
+boot is required before `migrate` can see the new DB config, so run 2 (now that
+`.env` exists) does `key:generate`/`migrate`/`storage:link` for real. Every field
+is also an option (`--app-url=`, `--db-connection=`, `--db-host=`, `--db-port=`,
+`--db-database=`, `--db-username=`, `--db-password=`) for a scripted
+`--no-interaction` deploy.
+
+Extend it with `Neocode\ApsConnect\Events\ApsConnectInstalled` (dispatched once
+migrations/storage:link have actually run — not on a run that only wrote `.env`)
+in your own `EventServiceProvider`, e.g. to seed an admin account:
+
+```php
+use Neocode\ApsConnect\Events\ApsConnectInstalled;
+
+Event::listen(ApsConnectInstalled::class, fn () => Artisan::call('app:seed-admin-account'));
+```
+
 ## Rules, References, and Templates
 
 Read before executing:
@@ -172,6 +241,15 @@ Read before executing:
   override or fallback
 - `src/Http/RegistraClient.php`, `src/Http/AppStationClient.php` — request/response
   and error-mapping behavior per service
+- `src/Console/Commands/ApsConnectReleaseCommand.php` — `--pack`/`--publish` flags,
+  interactive prompting, and the fields each mode needs
+- `src/Support/ReleaseArchiveBuilder.php` — staging excludes and the pack pipeline
+- `src/Support/PhpSourceObfuscator.php` — exactly what the obfuscation step does and
+  doesn't rename, and why (docblock explains the Laravel-specific risks it avoids)
+- `src/Console/Commands/ApsConnectInstallCommand.php` — the two-run split and why
+  it exists (env values written mid-process aren't visible to that same process)
+- `src/Events/ApsConnectInstalling.php`, `src/Events/ApsConnectInstalled.php` —
+  when each fires
 
 ## Examples
 
@@ -185,6 +263,14 @@ Read before executing:
 - An in-app "browse add-ons" screen calls `ApsConnect::getSoftwarePackages($slug)`
   and `ApsConnect::search($query)` directly — no licence, instance, or API key
   gating needed, since the catalogue is public.
+- A CI release job runs `php artisan aps-connect:release --pack --publish
+  --release-version="${{ github.ref_name }}" --token="${{ secrets.APS_TOKEN }}"
+  --no-interaction` after tests pass, with no manual steps.
+- A deploy script on a customer's server runs `php artisan aps-connect:install
+  --no-interaction` (with `--db-*` options) after every extract, twice back to
+  back on a brand-new server (the first call only writes `.env` and exits; the
+  second does the real work) — the same single command also handles a redeploy
+  over an existing install, where `.env` is already there and one call suffices.
 
 ## Anti-patterns
 
@@ -201,3 +287,14 @@ Read before executing:
   application's data model.
 - Do not document package internals here; keep the skill focused on adoption in
   Laravel apps.
+- Do not treat `aps-connect:release --pack`'s obfuscation step as real security —
+  it only strips comments and renames provably-safe local variables; class, method,
+  and property names are never touched, since Laravel resolves those through
+  reflection and magic strings throughout.
+- Do not run `aps-connect:release --pack` against a working copy expecting it to
+  install dependencies in place — it always stages an excluded copy first and runs
+  `composer install --no-dev` there, never in the project directory itself.
+- Do not expect a single `aps-connect:install` run to finish a brand-new install —
+  it always takes two when `.env` didn't exist yet, and that's by design (env
+  values written mid-process aren't visible to that same process's config), not
+  something to script around with a `config()`/`putenv()` override.

@@ -190,3 +190,77 @@ it('throws when appstation.baseUrl is not the expected object shape', function (
 
     (new ProjectConfigReader($this->basePath))->appStationCredentials($registraCredentials);
 })->throws(MissingCredentialsException::class);
+
+it('resolves the App Station base url on its own, without needing any Registra credentials', function () {
+    writeApsConnectProjectFixtures(
+        $this->basePath,
+        ['appstation' => ['baseUrl' => 'https://app-station.neocode.ci']],
+        null,
+    );
+
+    expect((new ProjectConfigReader($this->basePath))->appStationBaseUrl())->toBe('https://app-station.neocode.ci');
+});
+
+it('resolves a software project identity', function () {
+    writeApsConnectProjectFixtures(
+        $this->basePath,
+        [
+            'type' => 'software',
+            'software' => ['name' => 'My Software'],
+            'appstation' => ['softwareId' => 7],
+        ],
+        null,
+    );
+
+    $identity = (new ProjectConfigReader($this->basePath))->projectIdentity();
+
+    expect($identity->type)->toBe('software');
+    expect($identity->id)->toBe(7);
+    expect($identity->name)->toBe('My Software');
+    expect($identity->isModule())->toBeFalse();
+});
+
+it('resolves a module project identity', function () {
+    writeApsConnectProjectFixtures(
+        $this->basePath,
+        [
+            'type' => 'module',
+            'module' => ['name' => 'My Module'],
+            'appstation' => ['packageId' => 9],
+        ],
+        null,
+    );
+
+    $identity = (new ProjectConfigReader($this->basePath))->projectIdentity();
+
+    expect($identity->type)->toBe('module');
+    expect($identity->id)->toBe(9);
+    expect($identity->name)->toBe('My Module');
+    expect($identity->isModule())->toBeTrue();
+});
+
+it('throws when the project file has no type at all', function () {
+    writeApsConnectProjectFixtures($this->basePath, ['software' => ['name' => 'My Software']], null);
+
+    (new ProjectConfigReader($this->basePath))->projectIdentity();
+})->throws(MissingCredentialsException::class);
+
+it('throws when a software project has no softwareId configured', function () {
+    writeApsConnectProjectFixtures(
+        $this->basePath,
+        ['type' => 'software', 'software' => ['name' => 'My Software']],
+        null,
+    );
+
+    (new ProjectConfigReader($this->basePath))->projectIdentity();
+})->throws(MissingCredentialsException::class);
+
+it('throws when a software project has no name configured', function () {
+    writeApsConnectProjectFixtures(
+        $this->basePath,
+        ['type' => 'software', 'appstation' => ['softwareId' => 7]],
+        null,
+    );
+
+    (new ProjectConfigReader($this->basePath))->projectIdentity();
+})->throws(MissingCredentialsException::class);

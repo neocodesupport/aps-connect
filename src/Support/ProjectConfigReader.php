@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Neocode\ApsConnect\Support;
 
 use Neocode\ApsConnect\Data\AppStationCredentials;
+use Neocode\ApsConnect\Data\ProjectIdentity;
 use Neocode\ApsConnect\Data\RegistraCredentials;
 use Neocode\ApsConnect\Exceptions\MissingCredentialsException;
 
@@ -69,6 +70,19 @@ final class ProjectConfigReader
      */
     public function appStationCredentials(RegistraCredentials $registraCredentials): AppStationCredentials
     {
+        return new AppStationCredentials($registraCredentials->apiKey, $this->appStationBaseUrl());
+    }
+
+    /**
+     * The bare App Station base url on its own, with no Registra api key
+     * attached — used by ApsConnectReleasePublishCommand, which authenticates
+     * with a publisher session token instead and has no reason to resolve
+     * (or require) the unrelated Registra runtime api key just to find this
+     * url. Extracted out of appStationCredentials() above, which still needs
+     * both.
+     */
+    public function appStationBaseUrl(): string
+    {
         $projectConfig = $this->readJsonFile($this->basePath.'/appstation.conf.json');
 
         $baseUrl = $this->resolveNestedBaseUrl($projectConfig, 'appstation');
@@ -80,7 +94,50 @@ final class ProjectConfigReader
             );
         }
 
-        return new AppStationCredentials($registraCredentials->apiKey, $baseUrl);
+        return $baseUrl;
+    }
+
+    /**
+     * Which App Station software/module this project is linked to — read by
+     * ApsConnectReleasePublishCommand to pick `publisher/softwares/{id}` vs
+     * `publisher/packages/{id}`. Unlike credentials()/appStationCredentials(),
+     * this has no "trust anchor" concern (it doesn't decide which server is
+     * contacted, only which resource id is targeted), but it still throws
+     * MissingCredentialsException for a missing/malformed project file, for
+     * the same "fail loudly, tell the user to run `aps init`" reason.
+     */
+    public function projectIdentity(): ProjectIdentity
+    {
+        $projectConfig = $this->readJsonFile($this->basePath.'/appstation.conf.json');
+
+        $type = $projectConfig['type'] ?? null;
+
+        if ($type === 'module') {
+            $id = $projectConfig['appstation']['packageId'] ?? null;
+            $name = $projectConfig['module']['name'] ?? null;
+        } elseif ($type === 'software') {
+            $id = $projectConfig['appstation']['softwareId'] ?? null;
+            $name = $projectConfig['software']['name'] ?? null;
+        } else {
+            throw new MissingCredentialsException(
+                'No project type configured: appstation.conf.json has no (or an invalid) `type`. '.
+                'Run `aps init` to write it.',
+            );
+        }
+
+        if (! is_int($id)) {
+            throw new MissingCredentialsException(
+                "No {$type} id configured in appstation.conf.json. Run `aps init` (or `aps promote`) to write it.",
+            );
+        }
+
+        if (! is_string($name) || $name === '') {
+            throw new MissingCredentialsException(
+                "No {$type} name configured in appstation.conf.json. Run `aps init` to write it.",
+            );
+        }
+
+        return new ProjectIdentity($type, $id, $name);
     }
 
     /**
