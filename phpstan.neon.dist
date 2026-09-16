@@ -3,3 +3,14 @@ parameters:
     paths:
         - src
     tmpDir: build/phpstan
+    # PHPStan/Larastan boot a fresh Testbench app per worker process to
+    # analyse. On Windows, two workers racing to regenerate the same shared
+    # vendor/orchestra/testbench-core/laravel/bootstrap/cache/services.php
+    # manifest crash with "Access denied" (rename() can't replace a file
+    # another process still has open — unlike POSIX). The existing CI
+    # workflow already drops `--parallel` for Pest on Windows for the same
+    # reason; this does the equivalent for PHPStan's own parallelism. The
+    # package is small enough (single digit seconds to analyse) that the
+    # lost parallelism isn't a real cost on any platform.
+    parallel:
+        maximumNumberOfProcesses: 1
