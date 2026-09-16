@@ -19,7 +19,7 @@ beforeEach(function () {
     // cached ProjectConfigReader singleton — without touching the shared
     // Testbench skeleton, which is unsafe to write to under parallel test
     // execution.
-    $this->basePath = sys_get_temp_dir().'/aps-connect-tests-'.uniqid();
+    $this->basePath = sys_get_temp_dir().'/aps-connect-tests-'.bin2hex(random_bytes(8));
     mkdir($this->basePath, recursive: true);
     // The base urls have no config/env fallback (see ProjectConfigReaderTest
     // for that coverage), so both must be declared explicitly here.

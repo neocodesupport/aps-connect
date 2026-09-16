@@ -19,7 +19,7 @@ beforeEach(function () {
     $this->registraBaseUrl = 'https://registra.neocode.ci/api';
     $this->appStationBaseUrl = 'https://app-station.neocode.ci';
 
-    $this->basePath = sys_get_temp_dir().'/aps-connect-tests-'.uniqid();
+    $this->basePath = sys_get_temp_dir().'/aps-connect-tests-'.bin2hex(random_bytes(8));
     mkdir($this->basePath, recursive: true);
     file_put_contents($this->basePath.'/appstation.conf.json', json_encode([
         'environment' => 'production',

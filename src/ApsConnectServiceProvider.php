@@ -8,11 +8,15 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\ServiceProvider;
 use Neocode\ApsConnect\Console\Commands\ApsConnectDoctorCommand;
+use Neocode\ApsConnect\Console\Commands\ApsConnectInstallCommand;
+use Neocode\ApsConnect\Console\Commands\ApsConnectReleaseCommand;
 use Neocode\ApsConnect\Data\AppStationCredentials;
 use Neocode\ApsConnect\Data\RegistraCredentials;
 use Neocode\ApsConnect\Http\AppStationClient;
 use Neocode\ApsConnect\Http\RegistraClient;
+use Neocode\ApsConnect\Support\EnvironmentFileInstaller;
 use Neocode\ApsConnect\Support\ProjectConfigReader;
+use Neocode\ApsConnect\Support\ReleaseArchiveBuilder;
 
 class ApsConnectServiceProvider extends ServiceProvider
 {
@@ -47,6 +51,16 @@ class ApsConnectServiceProvider extends ServiceProvider
         );
 
         $this->app->singleton(ApsConnect::class);
+
+        $this->app->singleton(
+            ReleaseArchiveBuilder::class,
+            fn (Application $app) => new ReleaseArchiveBuilder($app->basePath()),
+        );
+
+        $this->app->singleton(
+            EnvironmentFileInstaller::class,
+            fn (Application $app) => new EnvironmentFileInstaller($app->basePath()),
+        );
     }
 
     /**
@@ -60,6 +74,8 @@ class ApsConnectServiceProvider extends ServiceProvider
 
         $this->commands([
             ApsConnectDoctorCommand::class,
+            ApsConnectReleaseCommand::class,
+            ApsConnectInstallCommand::class,
         ]);
     }
 }
