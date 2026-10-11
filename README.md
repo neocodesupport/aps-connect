@@ -936,9 +936,16 @@ Builds a ready-to-deploy zip of the current project:
    glob pattern per line — a bare `node_modules`-style pattern matches that
    name anywhere in the tree; a pattern containing `/` is anchored to the
    project root). **`.env*` and `appstation.conf.local.json` are always
-   excluded, regardless of `.apsignore`** — they hold secrets (your dev
-   Registra API key, the `aps sign` signing secret) that must never end up
-   in a published artifact.
+   excluded, regardless of `.apsignore`** — they hold secrets (the `aps
+   sign` signing secret, your local `.env`) that must never end up in a
+   published artifact. The archive gets a **generated**
+   `appstation.conf.local.json` instead, holding only `environment` and
+   `auth.apiKey` — what the deployed copy needs to verify licences — and
+   never `signingSecret`. Packing fails if `appstation.conf.local.json` has
+   no api key or belongs to another environment than `appstation.conf.json`,
+   and warns while the project is still in development: customer releases
+   need the production key
+   ([`aps-connect:fetch-key --production`](#refreshing-keys--going-to-production-aps-connectfetch-key)).
 2. Runs `composer install --no-dev --optimize-autoloader --no-interaction`
    in the staged copy.
 3. If a `package.json` is present and `--skip-npm` wasn't passed: runs

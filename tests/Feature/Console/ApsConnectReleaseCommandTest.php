@@ -33,6 +33,10 @@ beforeEach(function () {
 
     file_put_contents($this->basePath.'/appstation.conf.json', json_encode(apsConnectReleaseCommandSoftwareConfig()));
     file_put_contents($this->basePath.'/composer.json', '{}');
+    // No `environment` in the project config means production.
+    file_put_contents($this->basePath.'/appstation.conf.local.json', json_encode([
+        'environment' => 'production', 'auth' => ['apiKey' => 'prod-api-key'], 'signingSecret' => 'never-shipped',
+    ]));
 
     app()->singleton(ProjectConfigReader::class, fn () => new ProjectConfigReader($this->basePath));
     app()->singleton(ReleaseArchiveBuilder::class, fn () => new ReleaseArchiveBuilder($this->basePath));
@@ -246,3 +250,45 @@ it('sends APS_TOKEN to the project base url when APPSTATION_BASE_URL is not set'
     Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer env-token')
         && str_starts_with($request->url(), 'https://app-station.neocode.ci/api/v1/publisher/'));
 });
+
+it('ships the api key, but never the signing secret, in the packed archive', function () {
+    $out = $this->basePath.'/out.zip';
+
+    $this->artisan('aps-connect:release', ['--pack' => true, '--out' => $out, '--skip-npm' => true, '--no-obfuscate' => true])
+        ->doesntExpectOutputToContain('clé Registra "')
+        ->assertSuccessful();
+
+    $zip = new ZipArchive;
+    $zip->open($out);
+    $shipped = $zip->getFromName('appstation.conf.local.json');
+    $zip->close();
+    unlink($out);
+
+    expect(json_decode((string) $shipped, true))->toBe(['environment' => 'production', 'auth' => ['apiKey' => 'prod-api-key']])
+        ->and($shipped)->not->toContain('never-shipped');
+});
+
+it('warns when packing with the development key', function () {
+    file_put_contents($this->basePath.'/appstation.conf.json', json_encode([...apsConnectReleaseCommandSoftwareConfig(), 'environment' => 'development']));
+    file_put_contents($this->basePath.'/appstation.conf.local.json', json_encode([
+        'environment' => 'development', 'auth' => ['apiKey' => 'dev-api-key'], 'signingSecret' => 's',
+    ]));
+    $out = $this->basePath.'/out.zip';
+
+    $this->artisan('aps-connect:release', ['--pack' => true, '--out' => $out, '--skip-npm' => true, '--no-obfuscate' => true])
+        ->expectsOutputToContain('aps-connect:fetch-key --production')
+        ->assertSuccessful();
+
+    unlink($out);
+});
+
+it('refuses to pack without an api key or with another environment\'s credentials', function (array $local, string $message) {
+    file_put_contents($this->basePath.'/appstation.conf.local.json', json_encode($local));
+
+    $this->artisan('aps-connect:release', ['--pack' => true, '--skip-npm' => true, '--no-obfuscate' => true])
+        ->expectsOutputToContain($message)
+        ->assertFailed();
+})->with([
+    'no api key' => [['environment' => 'production', 'signingSecret' => 's'], "n'a pas de clé API"],
+    'development credentials' => [['environment' => 'development', 'auth' => ['apiKey' => 'k']], 'contient des identifiants "development", pas "production"'],
+]);

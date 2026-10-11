@@ -187,3 +187,18 @@ it('throws when composer install fails', function () {
     expect(fn () => $builder->build('My Software', outputPath: $this->projectDir.'/out.zip', skipNpm: true, skipObfuscation: true))
         ->toThrow(RuntimeException::class);
 });
+
+it('ships the given runtime local config in place of the excluded publisher file', function () {
+    $builder = new ReleaseArchiveBuilder($this->projectDir);
+
+    $zipPath = $builder->build('My Software', outputPath: $this->projectDir.'/out.zip', skipNpm: true, skipObfuscation: true, runtimeLocalConfig: ReleaseArchiveBuilder::runtimeLocalConfig([
+        'environment' => 'production', 'auth' => ['apiKey' => 'prod-key'], 'signingSecret' => 'secret',
+    ]));
+
+    $zip = new ZipArchive;
+    $zip->open($zipPath);
+    $shipped = json_decode((string) $zip->getFromName('appstation.conf.local.json'), true);
+    $zip->close();
+
+    expect($shipped)->toBe(['environment' => 'production', 'auth' => ['apiKey' => 'prod-key']]);
+});

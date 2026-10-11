@@ -31,7 +31,8 @@ final class ReleaseArchiveBuilder
      * hold secrets (dev Registra API key, HMAC signing secret from
      * `aps sign`) and must never end up in a published artifact. Since
      * .apsignore has no negation syntax, nothing a project declares there
-     * can ever cancel these.
+     * can ever cancel these. The archive's own appstation.conf.local.json
+     * is a generated runtime subset instead — see runtimeLocalConfig().
      */
     private const array HARD_EXCLUDES = [
         '.env',
@@ -76,7 +77,12 @@ final class ReleaseArchiveBuilder
 
     public function __construct(private readonly string $basePath) {}
 
-    public function build(string $slug, ?string $outputPath = null, bool $skipNpm = false, ?string $buildCommand = null, bool $skipObfuscation = false): string
+    /**
+     * @param  array<string, mixed>|null  $runtimeLocalConfig  shipped as the archive's appstation.conf.local.json —
+     *                                                         the runtime subset of the publisher's own file (see
+     *                                                         runtimeLocalConfig()), never the file itself
+     */
+    public function build(string $slug, ?string $outputPath = null, bool $skipNpm = false, ?string $buildCommand = null, bool $skipObfuscation = false, ?array $runtimeLocalConfig = null): string
     {
         $patterns = [...self::HARD_EXCLUDES, ...self::DEFAULT_EXCLUDES, ...$this->readApsIgnore()];
 
@@ -100,7 +106,7 @@ final class ReleaseArchiveBuilder
 
             $zipPath = $outputPath ?? $this->defaultOutputPath($slug);
             $this->ensureDirectoryExists(dirname($zipPath));
-            $this->zip($stagingDir, $zipPath, $patterns);
+            $this->zip($stagingDir, $zipPath, $patterns, $runtimeLocalConfig);
 
             return $zipPath;
         } finally {
@@ -184,9 +190,29 @@ final class ReleaseArchiveBuilder
     }
 
     /**
-     * @param  list<string>  $patterns
+     * What a deployed copy needs from appstation.conf.local.json to verify
+     * licences — `environment` and `auth.apiKey`, which ProjectConfigReader
+     * reads at runtime — and nothing else: `signingSecret` signs repo-linkage
+     * manifests and must never leave the publisher's machine. The api key
+     * itself ships with any distributed software anyway, since it is what
+     * authenticates its licence checks.
+     *
+     * @param  array<string, mixed>  $localConfig
+     * @return array{environment: mixed, auth: array{apiKey: mixed}}
      */
-    private function zip(string $stagingDir, string $zipPath, array $patterns): void
+    public static function runtimeLocalConfig(array $localConfig): array
+    {
+        return [
+            'environment' => $localConfig['environment'] ?? null,
+            'auth' => ['apiKey' => is_array($localConfig['auth'] ?? null) ? ($localConfig['auth']['apiKey'] ?? null) : null],
+        ];
+    }
+
+    /**
+     * @param  list<string>  $patterns
+     * @param  array<string, mixed>|null  $runtimeLocalConfig
+     */
+    private function zip(string $stagingDir, string $zipPath, array $patterns, ?array $runtimeLocalConfig): void
     {
         $zip = new ZipArchive;
 
@@ -206,6 +232,15 @@ final class ReleaseArchiveBuilder
             }
 
             $zip->addFile($file->getRealPath(), $relativePath);
+        }
+
+        // Added from memory, after the excluded-files pass: the publisher's
+        // own appstation.conf.local.json stays hard-excluded above.
+        if ($runtimeLocalConfig !== null) {
+            $zip->addFromString(
+                'appstation.conf.local.json',
+                json_encode($runtimeLocalConfig, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n",
+            );
         }
 
         $zip->close();

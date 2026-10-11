@@ -972,8 +972,15 @@ Construit un zip prêt à déployer du projet courant :
    nom n'importe où dans l'arborescence ; un motif contenant `/` est ancré à
    la racine du projet). **`.env*` et `appstation.conf.local.json` sont
    toujours exclus, quel que soit `.apsignore`** — ils contiennent des
-   secrets (votre clé API Registra de dev, le secret de signature `aps
-   sign`) qui ne doivent jamais finir dans un artefact publié.
+   secrets (le secret de signature `aps sign`, votre `.env` local) qui ne
+   doivent jamais finir dans un artefact publié. L'archive reçoit à la place
+   un `appstation.conf.local.json` **généré**, qui ne contient que
+   `environment` et `auth.apiKey` — ce dont la copie déployée a besoin pour
+   vérifier les licences — et jamais `signingSecret`. L'empaquetage échoue si
+   `appstation.conf.local.json` n'a pas de clé API ou appartient à un autre
+   environnement qu'`appstation.conf.json`, et avertit tant que le projet est
+   en développement : une release client a besoin de la clé de production
+   ([`aps-connect:fetch-key --production`](#rafraîchir-les-clés-et-passer-en-production--aps-connectfetch-key)).
 2. Lance `composer install --no-dev --optimize-autoloader --no-interaction`
    dans la copie mise en scène.
 3. Si un `package.json` est présent et que `--skip-npm` n'a pas été passé :

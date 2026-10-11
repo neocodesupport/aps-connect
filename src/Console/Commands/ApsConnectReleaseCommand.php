@@ -136,6 +136,12 @@ class ApsConnectReleaseCommand extends Command
             return null;
         }
 
+        $runtimeLocalConfig = $this->runtimeLocalConfig($configReader);
+
+        if ($runtimeLocalConfig === null) {
+            return null;
+        }
+
         $this->components->info("Empaquetage de \"{$identity->name}\"...");
 
         try {
@@ -145,6 +151,7 @@ class ApsConnectReleaseCommand extends Command
                 skipNpm: (bool) $this->option('skip-npm'),
                 buildCommand: $this->stringOption('build-command'),
                 skipObfuscation: (bool) $this->option('no-obfuscate'),
+                runtimeLocalConfig: $runtimeLocalConfig,
             );
         } catch (RuntimeException $e) {
             $this->components->error($e->getMessage());
@@ -159,6 +166,46 @@ class ApsConnectReleaseCommand extends Command
         }
 
         return $zipPath;
+    }
+
+    /**
+     * The api key the archive ships so the deployed copy can verify
+     * licences (ReleaseArchiveBuilder::runtimeLocalConfig()) — refused when
+     * appstation.conf.local.json has no key or belongs to another
+     * environment than appstation.conf.json, and flagged when it is still
+     * the development key customers can't use.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function runtimeLocalConfig(ProjectConfigReader $configReader): ?array
+    {
+        $projectEnvironment = $configReader->projectConfig()['environment'] ?? 'production';
+        $runtime = ReleaseArchiveBuilder::runtimeLocalConfig($configReader->localConfig());
+        $apiKey = $runtime['auth']['apiKey'];
+
+        if (! is_string($apiKey) || $apiKey === '') {
+            $this->components->error('appstation.conf.local.json n\'a pas de clé API (auth.apiKey) : l\'application déployée ne pourrait vérifier aucune licence. Exécutez "php artisan aps-connect:fetch-key".');
+
+            return null;
+        }
+
+        if ($runtime['environment'] !== $projectEnvironment) {
+            $this->components->error(sprintf(
+                'appstation.conf.local.json contient des identifiants "%s", pas "%s" comme appstation.conf.json. Exécutez "php artisan aps-connect:fetch-key" pour les réaligner avant d\'empaqueter.',
+                is_string($runtime['environment']) ? $runtime['environment'] : '?',
+                is_string($projectEnvironment) ? $projectEnvironment : '?',
+            ));
+
+            return null;
+        }
+
+        if ($projectEnvironment !== 'production') {
+            $this->components->warn(
+                "L'archive embarque la clé Registra \"{$projectEnvironment}\" : les licences de vos clients ne seront pas vérifiées contre Registra production. Pour une release client, exécutez d'abord \"php artisan aps-connect:fetch-key --production\".",
+            );
+        }
+
+        return $runtime;
     }
 
     private function publish(ProjectConfigReader $configReader, HttpFactory $http, ApsCliSession $session, ?string $file): int

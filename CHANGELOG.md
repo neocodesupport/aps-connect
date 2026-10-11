@@ -2,6 +2,15 @@
 
 ## [Unreleased](https://github.com/neocodesupport/aps-connect/compare/v1.1.0...master)
 
+### Bug fixes
+
+- `aps-connect:release --pack` archives now ship a generated
+  `appstation.conf.local.json` holding only `environment` and `auth.apiKey`
+  (never `signingSecret`). Previously the file was excluded entirely, so a
+  deployed copy had no Registra api key and every licence check failed with
+  `MissingCredentialsException`. Packing now fails without an api key or
+  with another environment's credentials, and warns with a development key.
+
 ### Enhancements
 
 - Add `aps-connect:update`, the PHP counterpart of `aps update`: partial
