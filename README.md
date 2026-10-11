@@ -68,6 +68,7 @@ purpose — see that section for what that involves.
 - [Linking a project: `aps-connect:init`](#linking-a-project-aps-connectinit)
 - [Refreshing keys & going to production: `aps-connect:fetch-key`](#refreshing-keys--going-to-production-aps-connectfetch-key)
 - [Checking the link: `aps-connect:status`](#checking-the-link-aps-connectstatus)
+- [Signing the repository link: `aps-connect:sign` / `aps-connect:verify`](#signing-the-repository-link-aps-connectsign--aps-connectverify)
 - [The `aps-connect:doctor` command](#the-aps-connectdoctor-command)
 - [Packaging & publishing a release (App Station)](#packaging--publishing-a-release-app-station)
   - [`--pack`](#--pack)
@@ -815,6 +816,29 @@ fingerprint) — no network call.
 
 To check that the credentials actually work against Registra, use
 [`aps-connect:doctor`](#the-aps-connectdoctor-command).
+## Signing the repository link: `aps-connect:sign` / `aps-connect:verify`
+
+```bash
+php artisan aps-connect:sign                                  # writes appstation.manifest.signed.json
+php artisan aps-connect:sign --output=build/manifest.json
+php artisan aps-connect:verify appstation.manifest.signed.json
+```
+
+The PHP counterparts of `aps sign` and `aps verify`. `aps-connect:sign` writes
+a manifest proving the link between this repository, its App Station
+software/module and its Registra environment, signed with HMAC-SHA256 using the
+signing secret from `appstation.conf.local.json`. It carries the api key's
+SHA-256 only, never the key. Submit it to App Station (publisher dashboard or
+review). It refuses to sign while `appstation.conf.local.json` holds another
+environment's credentials than `appstation.conf.json`.
+
+`aps-connect:verify` checks a manifest's schema, signature and freshness
+(30 days max); it exits `0` when valid, `1` otherwise. It needs the signing
+secret the manifest was signed with: this project's `appstation.conf.local.json`,
+or `APS_SIGNING_SECRET` (CI, or verifying outside the repository).
+
+Manifests are interchangeable with `aps-cli`'s: same canonical JSON (keys sorted,
+no whitespace) and signature, so one signed by either tool verifies with the other.
 ## The `aps-connect:doctor` command
 
 ```bash
@@ -846,9 +870,7 @@ One dev-time command, `aps-connect:release`, covers the part of publishing a
 release that repeats on every version: turning the project into an
 uploadable artifact, and uploading it. It picks up where
 [`aps-connect:init`](#linking-a-project-aps-connectinit) (or `aps init`) leaves
-off, reading the `appstation.conf.json` it wrote. Signing a repo-linkage
-manifest stays in the
-[`aps` CLI](https://www.npmjs.com/package/@app-station/cli) (`aps sign`).
+off, reading the `appstation.conf.json` it wrote.
 
 Run with no flags, it asks what to do first (pack and publish, pack only,
 or publish an existing file), then prompts for whatever it still needs —

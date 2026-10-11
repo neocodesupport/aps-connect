@@ -4,6 +4,10 @@
 
 ### Enhancements
 
+- Add `aps-connect:sign` / `aps-connect:verify`, the PHP counterparts of
+  `aps sign` / `aps verify`: HMAC-SHA256 repo-linkage manifests
+  interchangeable with aps-cli's (same canonical JSON and signature,
+  checked against a manifest signed by aps-cli itself).
 - Add `aps-connect:status`, the PHP counterpart of `aps status`: the local
   link with no network call, `--remote` for the App Station status and
   release count, `--secrets` for where secrets come from (never their value).
