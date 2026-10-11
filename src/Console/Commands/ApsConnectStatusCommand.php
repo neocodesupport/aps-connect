@@ -7,6 +7,7 @@ namespace Neocode\ApsConnect\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Neocode\ApsConnect\Console\Commands\Concerns\LinksAppStationProject;
+use Neocode\ApsConnect\Console\Commands\Concerns\PromptsMissingOptions;
 use Neocode\ApsConnect\Exceptions\MissingCredentialsException;
 use Neocode\ApsConnect\Exceptions\PublisherRequestException;
 use Neocode\ApsConnect\Http\PublisherClient;
@@ -26,6 +27,7 @@ use Neocode\ApsConnect\Support\ProjectConfigReader;
 class ApsConnectStatusCommand extends Command
 {
     use LinksAppStationProject;
+    use PromptsMissingOptions;
 
     /**
      * The command signature.
@@ -106,7 +108,7 @@ class ApsConnectStatusCommand extends Command
         $isModule = $type === 'module';
 
         try {
-            $items = $isModule ? $client->listPackages() : $client->listSoftwares();
+            $items = $this->withSpinner("Vérification du statut du {$type} App Station...", fn () => $isModule ? $client->listPackages() : $client->listSoftwares());
             $match = array_values(array_filter($items, static fn (array $item): bool => ($item['id'] ?? null) === $id))[0] ?? null;
 
             if ($match === null) {
@@ -115,7 +117,7 @@ class ApsConnectStatusCommand extends Command
                 return false;
             }
 
-            $releases = $isModule ? $client->listPackageReleases($id) : $client->listSoftwareReleases($id);
+            $releases = $this->withSpinner('Récupération des releases...', fn () => $isModule ? $client->listPackageReleases($id) : $client->listSoftwareReleases($id));
         } catch (PublisherRequestException $e) {
             $this->components->error($e->getMessage());
 
