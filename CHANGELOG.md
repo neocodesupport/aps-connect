@@ -4,6 +4,10 @@
 
 ### Enhancements
 
+- Add `aps-connect:login` / `aps-connect:logout`: checks a publisher token
+  against App Station and stores it in aps-cli's own `credentials.json`
+  (`--token`/`APS_TOKEN`, `--base-url`/`APPSTATION_BASE_URL`, `--dev`), so one
+  login serves both tools; logout deletes it.
 - Add `aps-connect:init`, the PHP counterpart of `aps init`: links the
   repository to an existing App Station software/module or creates one
   (`--link`/`--create`, `--type`, `--env`), then writes
