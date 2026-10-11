@@ -69,6 +69,7 @@ sur disque et le publie — voir cette section pour ce que ça implique.
 - [Se connecter : `aps-connect:login` / `aps-connect:logout`](#se-connecter--aps-connectlogin--aps-connectlogout)
 - [Lier un projet : `aps-connect:init`](#lier-un-projet--aps-connectinit)
 - [Rafraîchir les clés et passer en production : `aps-connect:fetch-key`](#rafraîchir-les-clés-et-passer-en-production--aps-connectfetch-key)
+- [Vérifier le lien : `aps-connect:status`](#vérifier-le-lien--aps-connectstatus)
 - [La commande `aps-connect:doctor`](#la-commande-aps-connectdoctor)
 - [Packaging & publication d'une release (App Station)](#packaging--publication-dune-release-app-station)
   - [`--pack`](#--pack)
@@ -819,6 +820,31 @@ avec la clé de développement. Récupérez la clé de production, rebuildez, et
 publiez ce build avec `aps-connect:release` **avant** que des clients
 n'installent quoi que ce soit. Pour revenir en développement ensuite :
 `aps-connect:init --env=development`.
+## Vérifier le lien : `aps-connect:status`
+
+```bash
+php artisan aps-connect:status             # local uniquement, aucun appel réseau
+php artisan aps-connect:status --remote    # + statut App Station et releases
+php artisan aps-connect:status --secrets   # + provenance des secrets
+```
+
+L'équivalent PHP d'`aps status`, en lecture seule. Sans option, il affiche
+l'instance App Station de la session éditeur et ce que lie
+`appstation.conf.json` (type, environnement, logiciel ou module et parent, URL
+Registra, empreinte) — aucun appel réseau.
+
+- `--remote` ajoute le statut App Station du logiciel/module (`draft`,
+  `pending_review`, `published`, ...) et le nombre de releases publiées —
+  pratique pour vérifier que la validation a commencé avant
+  [`aps-connect:fetch-key --production`](#rafraîchir-les-clés-et-passer-en-production--aps-connectfetch-key).
+- `--secrets` ajoute la provenance de la clé API et du signing secret —
+  **jamais leur valeur** — et signale un `appstation.conf.local.json` dont
+  l'environnement diffère de celui d'`appstation.conf.json`. Contrairement à
+  `aps status`, il n'indique jamais `REGISTRA_API_KEY` comme source :
+  aps-connect ne lit la clé API que dans `appstation.conf.local.json`.
+
+Pour vérifier que les identifiants fonctionnent réellement auprès de Registra,
+utilisez [`aps-connect:doctor`](#la-commande-aps-connectdoctor).
 ## La commande `aps-connect:doctor`
 
 ```bash

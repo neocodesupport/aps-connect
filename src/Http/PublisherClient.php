@@ -38,6 +38,26 @@ final class PublisherClient extends ApiClient
     }
 
     /**
+     * Every release of the software (yanked ones included), across all pages.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function listSoftwareReleases(int $softwareId): array
+    {
+        return $this->fetchAllPages(self::API_PREFIX."softwares/{$softwareId}/releases");
+    }
+
+    /**
+     * Every release of the module (yanked ones included), across all pages.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function listPackageReleases(int $packageId): array
+    {
+        return $this->fetchAllPages(self::API_PREFIX."packages/{$packageId}/releases");
+    }
+
+    /**
      * @param  array<string, string>  $fields
      * @return array<string, mixed>
      */

@@ -154,6 +154,18 @@ final class ProjectConfigReader
     }
 
     /**
+     * appstation.conf.local.json as-is (empty when missing or invalid) — for
+     * `aps-connect:status --secrets`, which reports which secrets it holds,
+     * never their values.
+     *
+     * @return array<string, mixed>
+     */
+    public function localConfig(): array
+    {
+        return $this->readJsonFile($this->basePath.'/appstation.conf.local.json');
+    }
+
+    /**
      * appstation.conf.json (written by `aps init` / flipped by `aps
      * promote`) is the ONLY source for the environment — it is versioned
      * and controlled by the publisher, unlike APP_ENV or any other ambient

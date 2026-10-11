@@ -4,6 +4,10 @@
 
 ### Enhancements
 
+- Add `aps-connect:status`, the PHP counterpart of `aps status`: the local
+  link with no network call, `--remote` for the App Station status and
+  release count, `--secrets` for where secrets come from (never their value).
+  `PublisherClient` gains `listSoftwareReleases()`/`listPackageReleases()`.
 - Add `aps-connect:fetch-key`, the PHP counterpart of `aps fetch-key`:
   re-issues the current environment's Registra key into
   `appstation.conf.local.json`, or with `--production` switches both project

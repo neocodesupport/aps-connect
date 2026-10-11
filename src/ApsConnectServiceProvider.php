@@ -14,6 +14,7 @@ use Neocode\ApsConnect\Console\Commands\ApsConnectInstallCommand;
 use Neocode\ApsConnect\Console\Commands\ApsConnectLoginCommand;
 use Neocode\ApsConnect\Console\Commands\ApsConnectLogoutCommand;
 use Neocode\ApsConnect\Console\Commands\ApsConnectReleaseCommand;
+use Neocode\ApsConnect\Console\Commands\ApsConnectStatusCommand;
 use Neocode\ApsConnect\Data\AppStationCredentials;
 use Neocode\ApsConnect\Data\RegistraCredentials;
 use Neocode\ApsConnect\Http\AppStationClient;
@@ -93,6 +94,7 @@ class ApsConnectServiceProvider extends ServiceProvider
             ApsConnectLogoutCommand::class,
             ApsConnectInitCommand::class,
             ApsConnectFetchKeyCommand::class,
+            ApsConnectStatusCommand::class,
             ApsConnectDoctorCommand::class,
             ApsConnectReleaseCommand::class,
             ApsConnectInstallCommand::class,
