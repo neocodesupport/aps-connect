@@ -71,6 +71,7 @@ sur disque et le publie — voir cette section pour ce que ça implique.
 - [Rafraîchir les clés et passer en production : `aps-connect:fetch-key`](#rafraîchir-les-clés-et-passer-en-production--aps-connectfetch-key)
 - [Vérifier le lien : `aps-connect:status`](#vérifier-le-lien--aps-connectstatus)
 - [Signer le lien du dépôt : `aps-connect:sign` / `aps-connect:verify`](#signer-le-lien-du-dépôt--aps-connectsign--aps-connectverify)
+- [Mettre à jour la fiche : `aps-connect:update`](#mettre-à-jour-la-fiche--aps-connectupdate)
 - [La commande `aps-connect:doctor`](#la-commande-aps-connectdoctor)
 - [Packaging & publication d'une release (App Station)](#packaging--publication-dune-release-app-station)
   - [`--pack`](#--pack)
@@ -870,6 +871,30 @@ de ce projet, ou `APS_SIGNING_SECRET` (CI, ou vérification hors du dépôt).
 Les manifests sont interchangeables avec ceux d'`aps-cli` : même JSON canonique
 (clés triées, sans espaces) et même signature, donc un manifest signé par l'un
 se vérifie avec l'autre.
+## Mettre à jour la fiche : `aps-connect:update`
+
+```bash
+php artisan aps-connect:update --name="Shop Pro" --tagline="Facturation pour boutiques"
+php artisan aps-connect:update --price-per-day=150 --trial-period-days=14
+php artisan aps-connect:update --disable-trial
+```
+
+L'équivalent PHP d'`aps update` : une mise à jour partielle de la fiche App
+Station du logiciel/module lié — seules les options passées changent. Il
+utilise la même session éditeur qu'[`aps-connect:init`](#lier-un-projet--aps-connectinit).
+
+| Option | Description |
+|---|---|
+| `--name=` | Nom, de 2 à 120 caractères (logiciel ou module). |
+| `--description=` | Description, 20 000 caractères max (logiciel ou module). |
+| `--tagline=` | Description courte, 180 caractères max (**logiciel uniquement**). |
+| `--price-per-day=` / `--lifetime-price=` | Prix en XOF, entiers ≥ 0 (**logiciel uniquement**). |
+| `--trial-period-days=` | Active l'essai gratuit, de 1 à 365 jours (**logiciel uniquement**). |
+| `--disable-trial` | Désactive l'essai gratuit (**logiciel uniquement**). |
+
+Les limites sont celles d'App Station, vérifiées avant toute requête ; les
+options réservées aux logiciels échouent sur un module au lieu d'être ignorées
+silencieusement.
 ## La commande `aps-connect:doctor`
 
 ```bash
