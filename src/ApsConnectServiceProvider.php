@@ -10,6 +10,8 @@ use Illuminate\Support\ServiceProvider;
 use Neocode\ApsConnect\Console\Commands\ApsConnectDoctorCommand;
 use Neocode\ApsConnect\Console\Commands\ApsConnectInitCommand;
 use Neocode\ApsConnect\Console\Commands\ApsConnectInstallCommand;
+use Neocode\ApsConnect\Console\Commands\ApsConnectLoginCommand;
+use Neocode\ApsConnect\Console\Commands\ApsConnectLogoutCommand;
 use Neocode\ApsConnect\Console\Commands\ApsConnectReleaseCommand;
 use Neocode\ApsConnect\Data\AppStationCredentials;
 use Neocode\ApsConnect\Data\RegistraCredentials;
@@ -86,6 +88,8 @@ class ApsConnectServiceProvider extends ServiceProvider
         }
 
         $this->commands([
+            ApsConnectLoginCommand::class,
+            ApsConnectLogoutCommand::class,
             ApsConnectInitCommand::class,
             ApsConnectDoctorCommand::class,
             ApsConnectReleaseCommand::class,

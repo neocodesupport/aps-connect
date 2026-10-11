@@ -66,6 +66,7 @@ sur disque et le publie — voir cette section pour ce que ça implique.
   - [Exceptions Registra](#exceptions-registra)
   - [Exceptions App Station](#exceptions-app-station)
   - [Erreurs de résolution des credentials](#erreurs-de-résolution-des-credentials)
+- [Se connecter : `aps-connect:login` / `aps-connect:logout`](#se-connecter--aps-connectlogin--aps-connectlogout)
 - [Lier un projet : `aps-connect:init`](#lier-un-projet--aps-connectinit)
 - [La commande `aps-connect:doctor`](#la-commande-aps-connectdoctor)
 - [Packaging & publication d'une release (App Station)](#packaging--publication-dune-release-app-station)
@@ -718,6 +719,30 @@ ne peut résoudre ni une clé API ni une URL de base du tout (voir les tableaux
 d'ordre de résolution dans [Configuration](#configuration)). Son message
 indique toujours précisément quelle valeur manque et comment la fournir.
 
+## Se connecter : `aps-connect:login` / `aps-connect:logout`
+
+```bash
+php artisan aps-connect:login                 # demande le token
+php artisan aps-connect:login --token=... --dev
+php artisan aps-connect:logout
+```
+
+`aps-connect:login` vérifie un **token éditeur** — généré dans App Station →
+Paramètres → CLI — auprès d'App Station, puis l'enregistre dans le même
+`credentials.json` qu'`aps login` (`%APPDATA%\app-station\` sous Windows,
+`~/.config/app-station/` ailleurs). Une seule connexion sert aux deux outils :
+`aps-connect:init`, `aps-connect:release` et toutes les commandes `aps` la
+reprennent. `aps-connect:logout` la supprime, ce qui déconnecte les deux outils.
+
+| Option | Description |
+|---|---|
+| `--token=` | Le token. Par défaut `APS_TOKEN`, sinon demandé via une saisie masquée. |
+| `--base-url=` | URL d'App Station. Par défaut `APPSTATION_BASE_URL`, sinon `https://app-station.neocode.ci`. |
+| `--dev` | Utilise `https://app-station.test` (sauf si une URL est fournie). |
+
+Un token refusé par App Station n'est jamais enregistré. La connexion par
+navigateur (`aps login` sans `--token`) reste dans `aps-cli`.
+
 ## Lier un projet : `aps-connect:init`
 
 L'équivalent PHP d'`aps init` : lie ce dépôt à un logiciel ou un module App
@@ -751,8 +776,8 @@ php artisan aps-connect:init --create --type=module --parent-software-id=7 --nam
 | `--yes` | Écraser un `appstation.conf.json` existant sans confirmation. |
 
 L'authentification utilise la **session éditeur** : `APS_TOKEN` avec
-`APPSTATION_BASE_URL`, sinon la session `aps login` (`aps-cli`) enregistrée sur
-la machine. La connexion elle-même reste dans `aps-cli`.
+`APPSTATION_BASE_URL`, sinon la session enregistrée sur la machine par
+[`aps-connect:login`](#se-connecter--aps-connectlogin--aps-connectlogout) ou `aps login`.
 
 Le parent d'un module doit proposer des modules (« Propose des modules » sur
 App Station). Ce réglage ne s'active que depuis l'interface web d'App Station —
@@ -797,10 +822,10 @@ Une commande de développement, `aps-connect:release`, couvre la partie de la
 publication d'une release qui se répète à chaque version : transformer le
 projet en artefact publiable, puis le publier. Elle prend le relais là où
 [`aps-connect:init`](#lier-un-projet--aps-connectinit) (ou `aps init`)
-s'arrête, en lisant le `appstation.conf.json` qu'il a écrit. S'authentifier,
-signer un manifeste de liaison et faire tourner les clés restent dans le
-[CLI `aps`](https://www.npmjs.com/package/@app-station/cli) (`aps login`,
-`aps sign`, `aps fetch-key`, ...).
+s'arrête, en lisant le `appstation.conf.json` qu'il a écrit. Signer un
+manifeste de liaison et faire tourner les clés restent dans le
+[CLI `aps`](https://www.npmjs.com/package/@app-station/cli) (`aps sign`,
+`aps fetch-key`, ...).
 
 Lancée sans flag, elle demande d'abord quoi faire (empaqueter et publier,
 empaqueter seulement, ou publier un fichier existant), puis pose une

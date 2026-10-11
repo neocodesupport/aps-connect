@@ -64,6 +64,7 @@ purpose — see that section for what that involves.
   - [Registra exceptions](#registra-exceptions)
   - [App Station exceptions](#app-station-exceptions)
   - [Credential resolution errors](#credential-resolution-errors)
+- [Logging in: `aps-connect:login` / `aps-connect:logout`](#logging-in-aps-connectlogin--aps-connectlogout)
 - [Linking a project: `aps-connect:init`](#linking-a-project-aps-connectinit)
 - [The `aps-connect:doctor` command](#the-aps-connectdoctor-command)
 - [Packaging & publishing a release (App Station)](#packaging--publishing-a-release-app-station)
@@ -690,6 +691,30 @@ cannot resolve an API key or a base url at all (see the resolution-order tables
 in [Configuration](#configuration)). Its message always says exactly which
 value is missing and how to provide it.
 
+## Logging in: `aps-connect:login` / `aps-connect:logout`
+
+```bash
+php artisan aps-connect:login                 # asks for the token
+php artisan aps-connect:login --token=... --dev
+php artisan aps-connect:logout
+```
+
+`aps-connect:login` checks a **publisher token** — generated in App Station →
+Paramètres → CLI — against App Station, then stores it in the same
+`credentials.json` as `aps login` (`%APPDATA%\app-station\` on Windows,
+`~/.config/app-station/` elsewhere). One login serves both tools: `aps-connect:init`,
+`aps-connect:release` and every `aps` command pick it up. `aps-connect:logout`
+deletes it, logging both tools out.
+
+| Option | Description |
+|---|---|
+| `--token=` | The token. Defaults to `APS_TOKEN`, else asked as a hidden input. |
+| `--base-url=` | App Station url. Defaults to `APPSTATION_BASE_URL`, else `https://app-station.neocode.ci`. |
+| `--dev` | Use `https://app-station.test` (unless a base url is given). |
+
+A token App Station rejects is never stored. The browser login flow
+(`aps login` without `--token`) stays in `aps-cli`.
+
 ## Linking a project: `aps-connect:init`
 
 The PHP counterpart of `aps init`: it links this repository to an App Station
@@ -723,8 +748,8 @@ php artisan aps-connect:init --create --type=module --parent-software-id=7 --nam
 | `--yes` | Overwrite an existing `appstation.conf.json` without asking. |
 
 It authenticates with the **publisher session**: `APS_TOKEN` together with
-`APPSTATION_BASE_URL`, else the session `aps login` (`aps-cli`) stored on this
-machine. Logging in itself stays in `aps-cli`.
+`APPSTATION_BASE_URL`, else the session stored on this machine by
+[`aps-connect:login`](#logging-in-aps-connectlogin--aps-connectlogout) or `aps login`.
 
 A module's parent must offer modules ("has modules" on App Station). That
 setting can only be turned on in App Station's web interface — its API, used
@@ -766,10 +791,10 @@ One dev-time command, `aps-connect:release`, covers the part of publishing a
 release that repeats on every version: turning the project into an
 uploadable artifact, and uploading it. It picks up where
 [`aps-connect:init`](#linking-a-project-aps-connectinit) (or `aps init`) leaves
-off, reading the `appstation.conf.json` it wrote. Authenticating, signing a
-repo-linkage manifest and rotating keys stay in the
-[`aps` CLI](https://www.npmjs.com/package/@app-station/cli) (`aps login`,
-`aps sign`, `aps fetch-key`, ...).
+off, reading the `appstation.conf.json` it wrote. Signing a repo-linkage
+manifest and rotating keys stay in the
+[`aps` CLI](https://www.npmjs.com/package/@app-station/cli) (`aps sign`,
+`aps fetch-key`, ...).
 
 Run with no flags, it asks what to do first (pack and publish, pack only,
 or publish an existing file), then prompts for whatever it still needs —

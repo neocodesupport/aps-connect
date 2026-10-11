@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace Neocode\ApsConnect\Support;
 
 use Neocode\ApsConnect\Data\PublisherCredentials;
+use RuntimeException;
 
 /**
- * Reads the publisher session `aps login` (aps-cli) leaves on disk, so
+ * Reads and writes the publisher session shared with `aps login` (aps-cli),
+ * stored by it or by `aps-connect:login`, so
  * `aps-connect:release --publish` works right after logging in with the CLI
  * without re-supplying the token. Mirrors aps-cli's src/lib/credentials.ts:
  * `%APPDATA%\app-station\credentials.json` on Windows,
@@ -47,6 +49,55 @@ final readonly class ApsCliSession
         }
 
         return new PublisherCredentials(trim($token), rtrim(trim($baseUrl), '/'));
+    }
+
+    /**
+     * Stores the session where aps-cli's writeCredentials() does, in its
+     * layout, so `aps` and aps-connect share one login.
+     *
+     * @throws RuntimeException when there is no home directory to write to
+     */
+    public function store(PublisherCredentials $credentials): void
+    {
+        $path = $this->resolvePath();
+        $directory = dirname($path);
+
+        if (! is_dir($directory)) {
+            mkdir($directory, 0700, recursive: true);
+        }
+
+        $json = json_encode(
+            ['appstation' => ['baseUrl' => $credentials->baseUrl, 'accessToken' => $credentials->token]],
+            JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR,
+        );
+
+        file_put_contents($path, str_replace('    ', '  ', $json)."\n");
+
+        // The token is stored in clear: owner-only, best-effort (no-op ACL
+        // semantics on Windows), like aps-cli.
+        @chmod($path, 0600);
+    }
+
+    /**
+     * Deletes the stored session. Returns whether there was one.
+     */
+    public function clear(): bool
+    {
+        $path = $this->credentialsPath ?? self::defaultCredentialsPath();
+
+        return $path !== null && is_file($path) && unlink($path);
+    }
+
+    public function path(): ?string
+    {
+        return $this->credentialsPath ?? self::defaultCredentialsPath();
+    }
+
+    private function resolvePath(): string
+    {
+        return $this->path() ?? throw new RuntimeException(
+            'Impossible de localiser le dossier de configuration (ni APPDATA/USERPROFILE, ni HOME).',
+        );
     }
 
     public static function defaultCredentialsPath(): ?string

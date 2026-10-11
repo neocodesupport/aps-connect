@@ -40,8 +40,9 @@ php artisan aps-connect:init --link --software-id=7 --no-interaction
 php artisan aps-connect:init --create --type=module --parent-software-id=7 --name="Invoices"
 ```
 
-It authenticates with `APS_TOKEN` + `APPSTATION_BASE_URL`, else the `aps login`
-session stored on the machine, and `--env=production` issues production keys.
+It authenticates with `APS_TOKEN` + `APPSTATION_BASE_URL`, else the publisher
+session stored on the machine by `php artisan aps-connect:login --token=...`
+(shared with `aps login`; `aps-connect:logout` deletes it), and `--env=production` issues production keys.
 
 ```json
 // appstation.conf.json (versioned, publisher-controlled)
