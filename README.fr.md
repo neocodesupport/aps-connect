@@ -70,6 +70,7 @@ sur disque et le publie — voir cette section pour ce que ça implique.
 - [Lier un projet : `aps-connect:init`](#lier-un-projet--aps-connectinit)
 - [Rafraîchir les clés et passer en production : `aps-connect:fetch-key`](#rafraîchir-les-clés-et-passer-en-production--aps-connectfetch-key)
 - [Vérifier le lien : `aps-connect:status`](#vérifier-le-lien--aps-connectstatus)
+- [Signer le lien du dépôt : `aps-connect:sign` / `aps-connect:verify`](#signer-le-lien-du-dépôt--aps-connectsign--aps-connectverify)
 - [La commande `aps-connect:doctor`](#la-commande-aps-connectdoctor)
 - [Packaging & publication d'une release (App Station)](#packaging--publication-dune-release-app-station)
   - [`--pack`](#--pack)
@@ -845,6 +846,30 @@ Registra, empreinte) — aucun appel réseau.
 
 Pour vérifier que les identifiants fonctionnent réellement auprès de Registra,
 utilisez [`aps-connect:doctor`](#la-commande-aps-connectdoctor).
+## Signer le lien du dépôt : `aps-connect:sign` / `aps-connect:verify`
+
+```bash
+php artisan aps-connect:sign                                  # écrit appstation.manifest.signed.json
+php artisan aps-connect:sign --output=build/manifest.json
+php artisan aps-connect:verify appstation.manifest.signed.json
+```
+
+Les équivalents PHP d'`aps sign` et `aps verify`. `aps-connect:sign` écrit un
+manifest prouvant le lien entre ce dépôt, son logiciel/module App Station et
+son environnement Registra, signé en HMAC-SHA256 avec le signing secret
+d'`appstation.conf.local.json`. Il ne contient que l'empreinte SHA-256 de la
+clé API, jamais la clé. Soumettez-le à App Station (dashboard éditeur ou
+validation). Il refuse de signer tant qu'`appstation.conf.local.json` contient
+les identifiants d'un autre environnement qu'`appstation.conf.json`.
+
+`aps-connect:verify` vérifie le schéma, la signature et la fraîcheur d'un
+manifest (30 jours max) ; il sort avec `0` s'il est valide, `1` sinon. Il a
+besoin du signing secret utilisé pour signer : l'`appstation.conf.local.json`
+de ce projet, ou `APS_SIGNING_SECRET` (CI, ou vérification hors du dépôt).
+
+Les manifests sont interchangeables avec ceux d'`aps-cli` : même JSON canonique
+(clés triées, sans espaces) et même signature, donc un manifest signé par l'un
+se vérifie avec l'autre.
 ## La commande `aps-connect:doctor`
 
 ```bash
@@ -878,9 +903,7 @@ Une commande de développement, `aps-connect:release`, couvre la partie de la
 publication d'une release qui se répète à chaque version : transformer le
 projet en artefact publiable, puis le publier. Elle prend le relais là où
 [`aps-connect:init`](#lier-un-projet--aps-connectinit) (ou `aps init`)
-s'arrête, en lisant le `appstation.conf.json` qu'il a écrit. Signer un
-manifeste de liaison reste dans le
-[CLI `aps`](https://www.npmjs.com/package/@app-station/cli) (`aps sign`).
+s'arrête, en lisant le `appstation.conf.json` qu'il a écrit.
 
 Lancée sans flag, elle demande d'abord quoi faire (empaqueter et publier,
 empaqueter seulement, ou publier un fichier existant), puis pose une
