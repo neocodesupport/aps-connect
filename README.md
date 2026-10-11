@@ -64,6 +64,7 @@ purpose — see that section for what that involves.
   - [Registra exceptions](#registra-exceptions)
   - [App Station exceptions](#app-station-exceptions)
   - [Credential resolution errors](#credential-resolution-errors)
+- [Linking a project: `aps-connect:init`](#linking-a-project-aps-connectinit)
 - [The `aps-connect:doctor` command](#the-aps-connectdoctor-command)
 - [Packaging & publishing a release (App Station)](#packaging--publishing-a-release-app-station)
   - [`--pack`](#--pack)
@@ -689,6 +690,51 @@ cannot resolve an API key or a base url at all (see the resolution-order tables
 in [Configuration](#configuration)). Its message always says exactly which
 value is missing and how to provide it.
 
+## Linking a project: `aps-connect:init`
+
+The PHP counterpart of `aps init`: it links this repository to an App Station
+software or module — an existing one, or one it creates — then writes
+`appstation.conf.json`, `appstation.conf.local.json` and the `.gitignore` block,
+in exactly the layout `aps init` writes them. Either tool can pick up where the
+other left off: both compute the same repository fingerprint (sha256 of the
+`origin` remote url, else of the local path), so App Station sees one repository.
+
+```bash
+# fully interactive: link or create, then pick from your account
+php artisan aps-connect:init
+
+# link an existing software (CI)
+php artisan aps-connect:init --link --software-id=7 --no-interaction
+
+# create a module under software #7, issue production credentials
+php artisan aps-connect:init --create --type=module --parent-software-id=7 --name="Invoices" --env=production
+```
+
+| Option | Description |
+|---|---|
+| `--link` / `--create` | Link an existing software/module, or create one then link it. Asked when omitted. |
+| `--type=` | `software` or `module`. Asked when omitted (non-interactively: `software`). |
+| `--env=` | `development` (default) or `production` — which Registra key is issued. |
+| `--software-id=` / `--package-id=` | What to link (`--link`). Picked from your account when omitted. |
+| `--parent-software-id=` | Parent software of a new module (`--create --type=module`). Picked among your softwares that offer modules when omitted. |
+| `--name=` / `--tagline=` | For `--create`, 255 characters max. The name (required) defaults to `package.json`'s, else the directory name; the tagline is optional. |
+| `--license-type=` | For `--create --type=software`: `free`, `freemium` (default), `paid`, `open_source` or `subscription`. |
+| `--force-link` | Re-link even if it is already linked to another repository. |
+| `--yes` | Overwrite an existing `appstation.conf.json` without asking. |
+
+It authenticates with the **publisher session**: `APS_TOKEN` together with
+`APPSTATION_BASE_URL`, else the session `aps login` (`aps-cli`) stored on this
+machine. Logging in itself stays in `aps-cli`.
+
+A module's parent must offer modules ("has modules" on App Station). That
+setting can only be turned on in App Station's web interface — its API, used
+here and by `aps init`, cannot set it — so a software created from the command
+line has none until you enable it there.
+
+With `--env=production`, the key is written right away but only becomes active
+on Registra once the software/module is submitted for review — the command
+warns about it while its status is below `pending_review`.
+
 ## The `aps-connect:doctor` command
 
 ```bash
@@ -718,12 +764,12 @@ Exit code is `0` on success, `1` if the API key is rejected at either step.
 
 One dev-time command, `aps-connect:release`, covers the part of publishing a
 release that repeats on every version: turning the project into an
-uploadable artifact, and uploading it. Everything else — linking the repo,
-authenticating, signing a repo-linkage manifest, rotating keys — stays in
-the [`aps` CLI](https://www.npmjs.com/package/@app-station/cli) (`aps
-login`, `aps init`, `aps sign`, `aps fetch-key`, ...); this command picks up
-where `aps init` leaves off, reading the same `appstation.conf.json` it
-wrote.
+uploadable artifact, and uploading it. It picks up where
+[`aps-connect:init`](#linking-a-project-aps-connectinit) (or `aps init`) leaves
+off, reading the `appstation.conf.json` it wrote. Authenticating, signing a
+repo-linkage manifest and rotating keys stay in the
+[`aps` CLI](https://www.npmjs.com/package/@app-station/cli) (`aps login`,
+`aps sign`, `aps fetch-key`, ...).
 
 Run with no flags, it asks what to do first (pack and publish, pack only,
 or publish an existing file), then prompts for whatever it still needs —

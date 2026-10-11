@@ -31,8 +31,17 @@ see below.
 ### 2. Provide `appstation.conf.json` / `appstation.conf.local.json` at the project root
 
 All credentials are resolved by `Neocode\ApsConnect\Support\ProjectConfigReader`
-from two files at the application's base path, both written by the `aps` CLI
-(e.g. `aps init`):
+from two files at the application's base path, both written by
+`php artisan aps-connect:init` (or the `aps` CLI's `aps init` — same layout):
+
+```bash
+php artisan aps-connect:init                                    # interactive: link or create
+php artisan aps-connect:init --link --software-id=7 --no-interaction
+php artisan aps-connect:init --create --type=module --parent-software-id=7 --name="Invoices"
+```
+
+It authenticates with `APS_TOKEN` + `APPSTATION_BASE_URL`, else the `aps login`
+session stored on the machine, and `--env=production` issues production keys.
 
 ```json
 // appstation.conf.json (versioned, publisher-controlled)
@@ -198,7 +207,7 @@ not the runtime Registra API key from step 2.
 
 This command requires the same `appstation.conf.json` from step 2, plus its `type`
 (`software`/`module`) and the linked `appstation.softwareId`/`packageId` — all
-written by `aps init`.
+written by `aps-connect:init` (or `aps init`).
 
 ### 7. Install/update on a customer server
 

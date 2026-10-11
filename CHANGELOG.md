@@ -4,6 +4,14 @@
 
 ### Enhancements
 
+- Add `aps-connect:init`, the PHP counterpart of `aps init`: links the
+  repository to an existing App Station software/module or creates one
+  (`--link`/`--create`, `--type`, `--env`), then writes
+  `appstation.conf.json`, `appstation.conf.local.json` and the `.gitignore`
+  block in the same layout and with the same repository fingerprint as
+  aps-cli. Authenticates with `APS_TOKEN` + `APPSTATION_BASE_URL`, else the
+  `aps login` session. `PublisherClient` gains the matching developer
+  endpoints and a `ProjectAlreadyLinkedException` (409).
 - `aps-connect:release --publish` now uses the session `aps login` (aps-cli)
   stored on the machine when neither `--token` nor `APS_TOKEN` is given, and
   sends it to the App Station instance that session was created for.
