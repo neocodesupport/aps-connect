@@ -2,6 +2,14 @@
 
 ## [Unreleased](https://github.com/neocodesupport/aps-connect/compare/v1.1.0...master)
 
+### Enhancements
+
+- `aps-connect:release --publish` now uses the session `aps login` (aps-cli)
+  stored on the machine when neither `--token` nor `APS_TOKEN` is given, and
+  sends it to the App Station instance that session was created for.
+  `APS_TOKEN` is sent to `APPSTATION_BASE_URL` when that variable is set,
+  matching aps-cli's own resolution order.
+
 ## [1.1.0](https://github.com/neocodesupport/aps-connect/compare/v1.0.0...v1.1.0) - 2026-10-11
 
 ### Enhancements

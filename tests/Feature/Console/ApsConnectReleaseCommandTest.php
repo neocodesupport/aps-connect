@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
+use Neocode\ApsConnect\Support\ApsCliSession;
 use Neocode\ApsConnect\Support\ProjectConfigReader;
 use Neocode\ApsConnect\Support\ReleaseArchiveBuilder;
 
@@ -36,16 +37,22 @@ beforeEach(function () {
     app()->singleton(ProjectConfigReader::class, fn () => new ProjectConfigReader($this->basePath));
     app()->singleton(ReleaseArchiveBuilder::class, fn () => new ReleaseArchiveBuilder($this->basePath));
 
+    // Never pick up the developer's real `aps login` session.
+    $this->sessionPath = $this->basePath.'/aps-cli-credentials.json';
+    app()->singleton(ApsCliSession::class, fn () => new ApsCliSession($this->sessionPath));
+
     $this->filePath = $this->basePath.'/release.zip';
     file_put_contents($this->filePath, 'zip-bytes');
 
     putenv('APS_TOKEN');
+    putenv('APPSTATION_BASE_URL');
 
     Process::fake();
 });
 
 afterEach(function () {
     putenv('APS_TOKEN');
+    putenv('APPSTATION_BASE_URL');
 
     foreach (glob($this->basePath.'/*') ?: [] as $file) {
         is_dir($file) || unlink($file);
@@ -182,4 +189,60 @@ it('fails non-interactively when no token is available', function () {
     ])
         ->expectsOutputToContain('Aucun token éditeur')
         ->assertFailed();
+});
+
+it('publishes with the aps login session, against the instance it was created for', function () {
+    Http::fake(['*' => Http::response(apsConnectReleaseCommandFakeReleaseResponse(), 201)]);
+
+    file_put_contents($this->sessionPath, json_encode([
+        'appstation' => ['baseUrl' => 'https://app-station.test/', 'accessToken' => 'session-token'],
+    ]));
+
+    $this->artisan('aps-connect:release', [
+        'file' => $this->filePath,
+        '--publish' => true,
+        '--release-version' => '1.0.0',
+        '--no-interaction' => true,
+    ])
+        ->expectsOutputToContain('Session aps login utilisée (https://app-station.test)')
+        ->assertSuccessful();
+
+    Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer session-token')
+        && str_starts_with($request->url(), 'https://app-station.test/api/v1/publisher/softwares/7/releases'));
+});
+
+it('prefers APS_TOKEN over the aps login session and sends it to APPSTATION_BASE_URL when set', function () {
+    Http::fake(['*' => Http::response(apsConnectReleaseCommandFakeReleaseResponse(), 201)]);
+
+    file_put_contents($this->sessionPath, json_encode([
+        'appstation' => ['baseUrl' => 'https://app-station.test', 'accessToken' => 'session-token'],
+    ]));
+    putenv('APS_TOKEN=env-token');
+    putenv('APPSTATION_BASE_URL=https://staging.app-station.test/');
+
+    $this->artisan('aps-connect:release', [
+        'file' => $this->filePath,
+        '--publish' => true,
+        '--release-version' => '1.0.0',
+        '--no-interaction' => true,
+    ])->assertSuccessful();
+
+    Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer env-token')
+        && str_starts_with($request->url(), 'https://staging.app-station.test/api/v1/publisher/'));
+});
+
+it('sends APS_TOKEN to the project base url when APPSTATION_BASE_URL is not set', function () {
+    Http::fake(['*' => Http::response(apsConnectReleaseCommandFakeReleaseResponse(), 201)]);
+
+    putenv('APS_TOKEN=env-token');
+
+    $this->artisan('aps-connect:release', [
+        'file' => $this->filePath,
+        '--publish' => true,
+        '--release-version' => '1.0.0',
+        '--no-interaction' => true,
+    ])->assertSuccessful();
+
+    Http::assertSent(fn ($request) => $request->hasHeader('Authorization', 'Bearer env-token')
+        && str_starts_with($request->url(), 'https://app-station.neocode.ci/api/v1/publisher/'));
 });
