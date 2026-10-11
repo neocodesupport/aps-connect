@@ -15,13 +15,13 @@
             "name": "NeoCode",
             "email": "support@neocode.ci",
             "homepage": "https://neocode.ci",
-            "role": "Developer"
+            "role": "Company Owner"
         },
         {
             "name": "Armel Meledje",
             "email": "meledjearmel@gmail.com",
             "homepage": "https://neocode.ci",
-            "role": "Developer"
+            "role": "Owner & Main Developer"
         }
     ],
     "require": {
