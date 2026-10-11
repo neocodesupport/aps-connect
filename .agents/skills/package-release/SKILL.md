@@ -24,7 +24,6 @@ Prepare a safe package release checklist and implementation without tagging, pus
 
 - `CHANGELOG.md`
 - `.github/release.yml`
-- `.github/workflows/update-changelog.yml`
 - `.github/workflows/tests.yml`
 - `composer.json`
 
