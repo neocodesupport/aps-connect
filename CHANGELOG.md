@@ -4,6 +4,10 @@
 
 ### Enhancements
 
+- Add `aps-connect:update`, the PHP counterpart of `aps update`: partial
+  update of the linked software's/module's App Station listing (name,
+  description, tagline, prices, trial), checked against App Station's own
+  limits first. `PublisherClient` gains `updateSoftware()`/`updatePackage()`.
 - Add `aps-connect:sign` / `aps-connect:verify`, the PHP counterparts of
   `aps sign` / `aps verify`: HMAC-SHA256 repo-linkage manifests
   interchangeable with aps-cli's (same canonical JSON and signature,

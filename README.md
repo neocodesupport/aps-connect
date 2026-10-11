@@ -69,6 +69,7 @@ purpose — see that section for what that involves.
 - [Refreshing keys & going to production: `aps-connect:fetch-key`](#refreshing-keys--going-to-production-aps-connectfetch-key)
 - [Checking the link: `aps-connect:status`](#checking-the-link-aps-connectstatus)
 - [Signing the repository link: `aps-connect:sign` / `aps-connect:verify`](#signing-the-repository-link-aps-connectsign--aps-connectverify)
+- [Updating the listing: `aps-connect:update`](#updating-the-listing-aps-connectupdate)
 - [The `aps-connect:doctor` command](#the-aps-connectdoctor-command)
 - [Packaging & publishing a release (App Station)](#packaging--publishing-a-release-app-station)
   - [`--pack`](#--pack)
@@ -839,6 +840,29 @@ or `APS_SIGNING_SECRET` (CI, or verifying outside the repository).
 
 Manifests are interchangeable with `aps-cli`'s: same canonical JSON (keys sorted,
 no whitespace) and signature, so one signed by either tool verifies with the other.
+## Updating the listing: `aps-connect:update`
+
+```bash
+php artisan aps-connect:update --name="Shop Pro" --tagline="Invoicing for shops"
+php artisan aps-connect:update --price-per-day=150 --trial-period-days=14
+php artisan aps-connect:update --disable-trial
+```
+
+The PHP counterpart of `aps update`: a partial update of the linked
+software's/module's App Station listing — only the options passed change. It
+uses the same publisher session as [`aps-connect:init`](#linking-a-project-aps-connectinit).
+
+| Option | Description |
+|---|---|
+| `--name=` | Name, 2 to 120 characters (software or module). |
+| `--description=` | Description, 20,000 characters max (software or module). |
+| `--tagline=` | Short description, 180 characters max (**software only**). |
+| `--price-per-day=` / `--lifetime-price=` | Prices in XOF, integers ≥ 0 (**software only**). |
+| `--trial-period-days=` | Enable the free trial, 1 to 365 days (**software only**). |
+| `--disable-trial` | Disable the free trial (**software only**). |
+
+The limits are App Station's own, checked before any request; software-only
+options fail on a module instead of being silently ignored.
 ## The `aps-connect:doctor` command
 
 ```bash

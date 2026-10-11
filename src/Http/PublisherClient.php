@@ -38,6 +38,29 @@ final class PublisherClient extends ApiClient
     }
 
     /**
+     * Partial update of a software's listing (name, tagline, description,
+     * prices, trial) — only the given fields change.
+     *
+     * @param  array<string, mixed>  $changes
+     * @return array<string, mixed>
+     */
+    public function updateSoftware(int $softwareId, array $changes): array
+    {
+        return $this->handle($this->request()->patch(self::API_PREFIX."softwares/{$softwareId}", $changes));
+    }
+
+    /**
+     * Partial update of a module's listing (name, description).
+     *
+     * @param  array<string, mixed>  $changes
+     * @return array<string, mixed>
+     */
+    public function updatePackage(int $packageId, array $changes): array
+    {
+        return $this->handle($this->request()->patch(self::API_PREFIX."packages/{$packageId}", $changes));
+    }
+
+    /**
      * Every release of the software (yanked ones included), across all pages.
      *
      * @return list<array<string, mixed>>
