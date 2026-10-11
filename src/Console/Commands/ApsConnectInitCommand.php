@@ -102,7 +102,7 @@ class ApsConnectInitCommand extends Command
                 return self::FAILURE;
             }
 
-            if (! $this->confirm('appstation.conf.json existe déjà. Écraser ?', false)) {
+            if (! $this->confirmIfInteractive('appstation.conf.json existe déjà. Écraser ?')) {
                 $this->components->info('Annulé. Utilisez "php artisan aps-connect:init --yes" pour écraser sans confirmation.');
 
                 return self::SUCCESS;
@@ -127,7 +127,7 @@ class ApsConnectInitCommand extends Command
                 ? $this->initModule($client, $mode, $fingerprint, $inspector)
                 : $this->initSoftware($client, $mode, $fingerprint, $inspector);
 
-            $response = $client->registraInit($type, (int) $target['id'], $environment, $fingerprint);
+            $response = $this->withSpinner('Récupération de la clé Registra...', fn () => $client->registraInit($type, (int) $target['id'], $environment, $fingerprint));
         } catch (PublisherValidationException $e) {
             $this->components->error('Validation refusée par App Station :');
 
@@ -199,18 +199,18 @@ class ApsConnectInitCommand extends Command
     private function initSoftware(PublisherClient $client, string $mode, string $fingerprint, ProjectInspector $inspector): array
     {
         if ($mode === 'create') {
-            $software = $client->createSoftware(
-                $this->resolveName($inspector),
-                $this->resolveTagline(),
-                $this->resolveLicenseType(),
-                $this->resolveHasModules(),
-            );
+            $name = $this->resolveName($inspector);
+            $tagline = $this->resolveTagline();
+            $licenseType = $this->resolveLicenseType();
+            $hasModules = $this->resolveHasModules();
+
+            $software = $this->withSpinner('Création du software sur App Station...', fn () => $client->createSoftware($name, $tagline, $licenseType, $hasModules));
 
             return $this->linkWithRetry('software', fn (bool $force) => $client->linkSoftware((int) $software['id'], $fingerprint, $force), true);
         }
 
         $id = $this->positiveIdOption('software-id')
-            ?? $this->pickId('Software App Station à lier ?', $client->listSoftwares(), 'Aucun software trouvé sur votre compte. Utilisez --create.', '--software-id');
+            ?? $this->pickId('Software App Station à lier ?', $this->withSpinner('Chargement de vos softwares App Station...', fn () => $client->listSoftwares()), 'Aucun software trouvé sur votre compte. Utilisez --create.', '--software-id');
 
         return $this->linkWithRetry('software', fn (bool $force) => $client->linkSoftware($id, $fingerprint, $force), (bool) $this->option('force-link'));
     }
@@ -225,18 +225,19 @@ class ApsConnectInitCommand extends Command
             $parentId = $this->positiveIdOption('parent-software-id')
                 ?? $this->pickId(
                     'Software parent du module ?',
-                    array_values(array_filter($client->listSoftwares(), static fn (array $software): bool => ($software['has_modules'] ?? false) === true)),
+                    array_values(array_filter($this->withSpinner('Chargement de vos softwares App Station...', fn () => $client->listSoftwares()), static fn (array $software): bool => ($software['has_modules'] ?? false) === true)),
                     'Aucun de vos softwares ne propose de modules. Activez-les sur le software parent — "php artisan aps-connect:update --has-modules" depuis son dépôt, ou « Propose des modules » dans App Station — puis relancez.',
                     '--parent-software-id',
                 );
 
-            $package = $client->createPackage($parentId, $this->resolveName($inspector));
+            $name = $this->resolveName($inspector);
+            $package = $this->withSpinner('Création du module sur App Station...', fn () => $client->createPackage($parentId, $name));
 
             return $this->linkWithRetry('module', fn (bool $force) => $client->linkPackage((int) $package['id'], $fingerprint, $force), true);
         }
 
         $id = $this->positiveIdOption('package-id')
-            ?? $this->pickId('Module App Station à lier ?', $client->listPackages(), 'Aucun module trouvé sur votre compte. Utilisez --create --type=module.', '--package-id');
+            ?? $this->pickId('Module App Station à lier ?', $this->withSpinner('Chargement de vos modules App Station...', fn () => $client->listPackages()), 'Aucun module trouvé sur votre compte. Utilisez --create --type=module.', '--package-id');
 
         return $this->linkWithRetry('module', fn (bool $force) => $client->linkPackage($id, $fingerprint, $force), (bool) $this->option('force-link'));
     }
@@ -303,10 +304,7 @@ class ApsConnectInitCommand extends Command
     {
         $tagline = $this->stringOption('tagline');
 
-        if ($tagline === null && $this->input->isInteractive()) {
-            $answer = $this->ask('Tagline (optionnel, 255 caractères max)');
-            $tagline = is_string($answer) && trim($answer) !== '' ? trim($answer) : null;
-        }
+        $tagline ??= $this->askOptional('Tagline', 'Optionnelle, 255 caractères max — laissez vide pour passer.');
 
         if ($tagline !== null && mb_strlen($tagline) > self::MAX_TEXT_LENGTH) {
             throw new RuntimeException('La tagline ne doit pas dépasser 255 caractères.');
@@ -325,8 +323,7 @@ class ApsConnectInitCommand extends Command
             return true;
         }
 
-        return $this->input->isInteractive()
-            && $this->confirm('Ce software propose-t-il des modules (optionnels, vendus ou activés séparément) ?', false);
+        return $this->confirmIfInteractive('Ce software propose-t-il des modules ?', hint: 'Optionnels, vendus ou activés séparément — requis pour créer des modules rattachés.');
     }
 
     /**

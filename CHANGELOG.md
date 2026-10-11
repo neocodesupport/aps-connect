@@ -13,6 +13,10 @@
 
 ### Enhancements
 
+- Every aps-connect command now asks through Laravel Prompts (text, select,
+  confirm, password, with hints) and shows a spinner during App Station
+  calls and while packing. `laravel/prompts` moves from `require-dev` to
+  `require`. Laravel falls back to plain questions on Windows and in tests.
 - `aps-connect:init --create` sets whether a new software offers modules
   (`--has-modules`, asked when interactive), and `aps-connect:update` turns it
   on or off (`--has-modules`/`--no-modules`), now that App Station's API

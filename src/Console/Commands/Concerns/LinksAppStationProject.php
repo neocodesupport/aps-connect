@@ -15,6 +15,7 @@ use RuntimeException;
  * What `aps-connect:init` and `aps-connect:fetch-key` share, mirroring the
  * helpers aps-cli's fetch-key reuses from its init: the publisher session,
  * the link-with-409-retry flow, and the appstation.conf.json layout.
+ * Commands using it also use PromptsMissingOptions (confirmIfInteractive()).
  */
 trait LinksAppStationProject
 {
@@ -58,17 +59,17 @@ trait LinksAppStationProject
     private function linkWithRetry(string $label, Closure $link, bool $force): array
     {
         try {
-            $result = $link($force);
+            $result = $this->withSpinner("Liaison du projet au {$label} App Station...", fn () => $link($force));
         } catch (ProjectAlreadyLinkedException $e) {
             if ($force) {
                 throw $e;
             }
 
-            if (! $this->input->isInteractive() || ! $this->confirm("Ce {$label} est déjà lié à un autre dépôt local. Forcer la liaison ?", false)) {
+            if (! $this->input->isInteractive() || ! $this->confirmIfInteractive("Ce {$label} est déjà lié à un autre dépôt local. Forcer la liaison ?")) {
                 throw new RuntimeException("Ce {$label} est déjà lié à un autre dépôt local. Relancez avec --force-link pour forcer la liaison.");
             }
 
-            $result = $link(true);
+            $result = $this->withSpinner('Liaison forcée du projet...', fn () => $link(true));
         }
 
         if ($result['registra_dev_sync_error'] !== null) {

@@ -63,7 +63,7 @@ class ApsConnectLoginCommand extends Command
         $credentials = new PublisherCredentials($token, $baseUrl);
 
         try {
-            (new PublisherClient($credentials, $http))->listSoftwares();
+            $this->withSpinner("Vérification du token auprès d'App Station...", fn () => (new PublisherClient($credentials, $http))->listSoftwares());
         } catch (PublisherRequestException $e) {
             $this->components->error("Impossible de valider le token auprès d'App Station ({$baseUrl}) : {$e->getMessage()}");
 

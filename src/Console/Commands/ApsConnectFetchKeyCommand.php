@@ -7,6 +7,7 @@ namespace Neocode\ApsConnect\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Neocode\ApsConnect\Console\Commands\Concerns\LinksAppStationProject;
+use Neocode\ApsConnect\Console\Commands\Concerns\PromptsMissingOptions;
 use Neocode\ApsConnect\Exceptions\MissingCredentialsException;
 use Neocode\ApsConnect\Exceptions\PublisherRequestException;
 use Neocode\ApsConnect\Http\PublisherClient;
@@ -32,6 +33,7 @@ use RuntimeException;
 class ApsConnectFetchKeyCommand extends Command
 {
     use LinksAppStationProject;
+    use PromptsMissingOptions;
 
     private const array REGISTRA_SUBMITTED_STATUSES = ['pending_review', 'published'];
 
@@ -98,9 +100,10 @@ class ApsConnectFetchKeyCommand extends Command
                 ? $this->linkWithRetry('module', fn (bool $force) => $client->linkPackage($identity->id, $fingerprint, $force), false)
                 : $this->linkWithRetry('software', fn (bool $force) => $client->linkSoftware($identity->id, $fingerprint, $force), false);
 
-            $this->components->info($production ? 'Récupération de la clé Registra production...' : 'Récupération de la clé Registra courante...');
-
-            $response = $client->registraInit($identity->type, $identity->id, $targetEnvironment, $fingerprint);
+            $response = $this->withSpinner(
+                $production ? 'Récupération de la clé Registra production...' : 'Récupération de la clé Registra courante...',
+                fn () => $client->registraInit($identity->type, $identity->id, $targetEnvironment, $fingerprint),
+            );
         } catch (PublisherRequestException|RuntimeException $e) {
             $this->components->error($e->getMessage());
 

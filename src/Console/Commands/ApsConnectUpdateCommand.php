@@ -79,9 +79,10 @@ class ApsConnectUpdateCommand extends Command
         $client = new PublisherClient($credentials, $http);
 
         try {
-            $updated = $identity->isModule()
-                ? $client->updatePackage($identity->id, $changes)
-                : $client->updateSoftware($identity->id, $changes);
+            $updated = $this->withSpinner(
+                "Mise à jour du {$identity->type} sur App Station...",
+                fn () => $identity->isModule() ? $client->updatePackage($identity->id, $changes) : $client->updateSoftware($identity->id, $changes),
+            );
         } catch (PublisherValidationException $e) {
             $this->components->error('Validation refusée par App Station :');
 

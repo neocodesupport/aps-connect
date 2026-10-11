@@ -113,10 +113,10 @@ class ApsConnectReleaseCommand extends Command
             return [true, true];
         }
 
-        $choice = $this->choice(
+        $choice = $this->choiceString(
             'Que voulez-vous faire ?',
             ['Empaqueter et publier', 'Empaqueter seulement', 'Publier un fichier existant'],
-            0,
+            'Empaqueter et publier',
         );
 
         return match ($choice) {
@@ -142,17 +142,15 @@ class ApsConnectReleaseCommand extends Command
             return null;
         }
 
-        $this->components->info("Empaquetage de \"{$identity->name}\"...");
-
         try {
-            $zipPath = $builder->build(
+            $zipPath = $this->withSpinner("Empaquetage de \"{$identity->name}\" (dépendances, build, obfuscation)...", fn () => $builder->build(
                 slug: $identity->name,
                 outputPath: $this->stringOption('out'),
                 skipNpm: (bool) $this->option('skip-npm'),
                 buildCommand: $this->stringOption('build-command'),
                 skipObfuscation: (bool) $this->option('no-obfuscate'),
                 runtimeLocalConfig: $runtimeLocalConfig,
-            );
+            ));
         } catch (RuntimeException $e) {
             $this->components->error($e->getMessage());
 
@@ -299,12 +297,13 @@ class ApsConnectReleaseCommand extends Command
 
         $client = new PublisherClient($credentials, $http);
 
-        $this->components->info("Publication de la release {$version} ({$channel}, {$platform})...");
-
         try {
-            $data = $identity->isModule()
-                ? $client->createPackageRelease($identity->id, $fields, $file, $uploadName)
-                : $client->createSoftwareRelease($identity->id, $fields, $file, $uploadName);
+            $data = $this->withSpinner(
+                "Publication de la release {$version} ({$channel}, {$platform})...",
+                fn () => $identity->isModule()
+                    ? $client->createPackageRelease($identity->id, $fields, $file, $uploadName)
+                    : $client->createSoftwareRelease($identity->id, $fields, $file, $uploadName),
+            );
         } catch (PublisherValidationException $e) {
             $this->components->error('Validation refusée par App Station :');
 

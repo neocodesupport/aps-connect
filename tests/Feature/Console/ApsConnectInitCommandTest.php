@@ -304,9 +304,9 @@ it('asks for the name, tagline and license type when creating a software interac
 
     $this->artisan('aps-connect:init', ['--type' => 'software', '--create' => true])
         ->expectsQuestion('Nom du software/module', 'Shop')
-        ->expectsQuestion('Tagline (optionnel, 255 caractères max)', '')
+        ->expectsQuestion('Tagline', '')
         ->expectsChoice('Type de licence', 'paid', ['free', 'freemium', 'paid', 'open_source', 'subscription'])
-        ->expectsConfirmation('Ce software propose-t-il des modules (optionnels, vendus ou activés séparément) ?', 'no')
+        ->expectsConfirmation('Ce software propose-t-il des modules ?', 'no')
         ->assertSuccessful();
 
     Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/developer/softwares')
