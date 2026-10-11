@@ -60,6 +60,7 @@ class ApsConnectInitCommand extends Command
         {--name= : Name (--create; defaults to package.json name or the directory name)}
         {--tagline= : Short description, max 255 characters (--create, software)}
         {--license-type= : free|freemium|paid|open_source|subscription (--create, software; default: freemium)}
+        {--has-modules : The new software offers modules (--create, software; asked when interactive)}
         {--force-link : Re-link even if it is already linked to another repository}
         {--yes : Overwrite an existing appstation.conf.json without asking}';
 
@@ -202,6 +203,7 @@ class ApsConnectInitCommand extends Command
                 $this->resolveName($inspector),
                 $this->resolveTagline(),
                 $this->resolveLicenseType(),
+                $this->resolveHasModules(),
             );
 
             return $this->linkWithRetry('software', fn (bool $force) => $client->linkSoftware((int) $software['id'], $fingerprint, $force), true);
@@ -220,13 +222,11 @@ class ApsConnectInitCommand extends Command
     {
         if ($mode === 'create') {
             // Only softwares that offer modules can be a module's parent.
-            // `has_modules` can only be turned on in App Station's web UI
-            // (its API neither sets nor updates it), hence the hint below.
             $parentId = $this->positiveIdOption('parent-software-id')
                 ?? $this->pickId(
                     'Software parent du module ?',
                     array_values(array_filter($client->listSoftwares(), static fn (array $software): bool => ($software['has_modules'] ?? false) === true)),
-                    'Aucun de vos softwares ne propose de modules. Activez « Propose des modules » sur le software parent dans App Station, puis relancez.',
+                    'Aucun de vos softwares ne propose de modules. Activez-les sur le software parent — "php artisan aps-connect:update --has-modules" depuis son dépôt, ou « Propose des modules » dans App Station — puis relancez.',
                     '--parent-software-id',
                 );
 
@@ -313,6 +313,20 @@ class ApsConnectInitCommand extends Command
         }
 
         return $tagline;
+    }
+
+    /**
+     * Whether the new software offers modules (App Station's `has_modules`,
+     * false by default) — required for any module to use it as parent.
+     */
+    private function resolveHasModules(): bool
+    {
+        if ($this->option('has-modules')) {
+            return true;
+        }
+
+        return $this->input->isInteractive()
+            && $this->confirm('Ce software propose-t-il des modules (optionnels, vendus ou activés séparément) ?', false);
     }
 
     /**

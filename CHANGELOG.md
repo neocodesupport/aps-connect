@@ -13,6 +13,10 @@
 
 ### Enhancements
 
+- `aps-connect:init --create` sets whether a new software offers modules
+  (`--has-modules`, asked when interactive), and `aps-connect:update` turns it
+  on or off (`--has-modules`/`--no-modules`), now that App Station's API
+  accepts `has_modules`.
 - Add `aps-connect:update`, the PHP counterpart of `aps update`: partial
   update of the linked software's/module's App Station listing (name,
   description, tagline, prices, trial), checked against App Station's own

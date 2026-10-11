@@ -284,11 +284,12 @@ it('creates a software with the fields App Station accepts', function () {
         '--name' => 'My App',
         '--tagline' => 'Invoicing for small shops',
         '--license-type' => 'subscription',
+        '--has-modules' => true,
         '--no-interaction' => true,
     ])->assertSuccessful();
 
     Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/developer/softwares')
-        && $request->data() === ['name' => 'My App', 'tagline' => 'Invoicing for small shops', 'license_type' => 'subscription']);
+        && $request->data() === ['name' => 'My App', 'tagline' => 'Invoicing for small shops', 'license_type' => 'subscription', 'has_modules' => true]);
 });
 
 it('asks for the name, tagline and license type when creating a software interactively', function () {
@@ -305,10 +306,11 @@ it('asks for the name, tagline and license type when creating a software interac
         ->expectsQuestion('Nom du software/module', 'Shop')
         ->expectsQuestion('Tagline (optionnel, 255 caractères max)', '')
         ->expectsChoice('Type de licence', 'paid', ['free', 'freemium', 'paid', 'open_source', 'subscription'])
+        ->expectsConfirmation('Ce software propose-t-il des modules (optionnels, vendus ou activés séparément) ?', 'no')
         ->assertSuccessful();
 
     Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/developer/softwares')
-        && $request->data() === ['name' => 'Shop', 'license_type' => 'paid']);
+        && $request->data() === ['name' => 'Shop', 'license_type' => 'paid', 'has_modules' => false]);
 });
 
 it('only offers softwares that propose modules as a new module parent', function () {
@@ -340,7 +342,7 @@ it('explains how to enable modules when no software proposes them', function () 
     ]);
 
     $this->artisan('aps-connect:init', ['--type' => 'module', '--create' => true, '--name' => 'Invoices'])
-        ->expectsOutputToContain('Activez « Propose des modules »')
+        ->expectsOutputToContain('aps-connect:update --has-modules')
         ->assertFailed();
 });
 

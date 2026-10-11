@@ -28,7 +28,7 @@ class ApsConnectUpdateCommand extends Command
     use LinksAppStationProject;
     use PromptsMissingOptions;
 
-    private const array SOFTWARE_ONLY_OPTIONS = ['tagline', 'price-per-day', 'lifetime-price', 'trial-period-days', 'disable-trial'];
+    private const array SOFTWARE_ONLY_OPTIONS = ['tagline', 'price-per-day', 'lifetime-price', 'trial-period-days', 'disable-trial', 'has-modules', 'no-modules'];
 
     /**
      * The command signature.
@@ -40,7 +40,9 @@ class ApsConnectUpdateCommand extends Command
         {--price-per-day= : Price per day in XOF (software only)}
         {--lifetime-price= : Lifetime price in XOF (software only)}
         {--trial-period-days= : Enable the free trial, 1 to 365 days (software only)}
-        {--disable-trial : Disable the free trial (software only)}';
+        {--disable-trial : Disable the free trial (software only)}
+        {--has-modules : The software offers modules — required to parent any module (software only)}
+        {--no-modules : The software no longer offers modules (software only)}';
 
     /**
      * The command description.
@@ -115,7 +117,7 @@ class ApsConnectUpdateCommand extends Command
             $unsupported = array_filter(self::SOFTWARE_ONLY_OPTIONS, fn (string $option): bool => $this->option($option) !== null && $this->option($option) !== false);
 
             if ($unsupported !== []) {
-                throw new RuntimeException(implode(', ', array_map(static fn (string $o): string => "--{$o}", $unsupported)).' non disponible pour un module (tagline, prix et essai sont des champs software uniquement).');
+                throw new RuntimeException(implode(', ', array_map(static fn (string $o): string => "--{$o}", $unsupported)).' non disponible pour un module (tagline, prix, essai et modules sont des champs software uniquement).');
             }
         }
 
@@ -123,6 +125,10 @@ class ApsConnectUpdateCommand extends Command
 
         if ($trialDays !== null && $this->option('disable-trial')) {
             throw new RuntimeException('--trial-period-days et --disable-trial sont contradictoires : choisissez-en un seul.');
+        }
+
+        if ($this->option('has-modules') && $this->option('no-modules')) {
+            throw new RuntimeException('--has-modules et --no-modules sont contradictoires : choisissez-en un seul.');
         }
 
         $changes = [];
@@ -170,10 +176,14 @@ class ApsConnectUpdateCommand extends Command
             if ($this->option('disable-trial')) {
                 $changes['has_trial_mode'] = false;
             }
+
+            if ($this->option('has-modules') || $this->option('no-modules')) {
+                $changes['has_modules'] = (bool) $this->option('has-modules');
+            }
         }
 
         if ($changes === []) {
-            throw new RuntimeException('Aucun champ à mettre à jour. Utilisez --name, --description'.($isModule ? '' : ', --tagline, --price-per-day, --lifetime-price, --trial-period-days, --disable-trial').'.');
+            throw new RuntimeException('Aucun champ à mettre à jour. Utilisez --name, --description'.($isModule ? '' : ', --tagline, --price-per-day, --lifetime-price, --trial-period-days, --disable-trial, --has-modules, --no-modules').'.');
         }
 
         return $changes;

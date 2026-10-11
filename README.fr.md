@@ -776,6 +776,7 @@ php artisan aps-connect:init --create --type=module --parent-software-id=7 --nam
 | `--parent-software-id=` | Logiciel parent d'un nouveau module (`--create --type=module`). Choisi parmi vos logiciels qui proposent des modules si absent. |
 | `--name=` / `--tagline=` | Pour `--create`, 255 caractères max. Le nom (obligatoire) vaut par défaut celui de `package.json`, sinon le nom du dossier ; la tagline est facultative. |
 | `--license-type=` | Pour `--create --type=software` : `free`, `freemium` (défaut), `paid`, `open_source` ou `subscription`. |
+| `--has-modules` | Pour `--create --type=software` : le logiciel propose des modules. Demandé en interactif ; désactivé sinon. |
 | `--force-link` | Relier même si le logiciel/module est déjà lié à un autre dépôt. |
 | `--yes` | Écraser un `appstation.conf.json` existant sans confirmation. |
 
@@ -784,10 +785,9 @@ L'authentification utilise la **session éditeur** : `APS_TOKEN` avec
 [`aps-connect:login`](#se-connecter--aps-connectlogin--aps-connectlogout) ou `aps login`.
 
 Le parent d'un module doit proposer des modules (« Propose des modules » sur
-App Station). Ce réglage ne s'active que depuis l'interface web d'App Station —
-son API, utilisée ici et par `aps init`, ne permet pas de le définir — donc un
-logiciel créé en ligne de commande n'en propose pas tant que vous ne l'avez pas
-activé là-bas.
+App Station). Définissez-le à la création du logiciel (`--has-modules`, ou en
+répondant à la question), ou plus tard depuis le dépôt du logiciel avec
+[`aps-connect:update --has-modules`](#mettre-à-jour-la-fiche--aps-connectupdate).
 
 Avec `--env=production`, la clé est écrite tout de suite mais ne devient active
 côté Registra qu'une fois le logiciel/module soumis à la validation — la
@@ -891,6 +891,7 @@ utilise la même session éditeur qu'[`aps-connect:init`](#lier-un-projet--aps-c
 | `--price-per-day=` / `--lifetime-price=` | Prix en XOF, entiers ≥ 0 (**logiciel uniquement**). |
 | `--trial-period-days=` | Active l'essai gratuit, de 1 à 365 jours (**logiciel uniquement**). |
 | `--disable-trial` | Désactive l'essai gratuit (**logiciel uniquement**). |
+| `--has-modules` / `--no-modules` | Le logiciel propose (ou non) des modules — requis pour être parent d'un module (**logiciel uniquement**). |
 
 Les limites sont celles d'App Station, vérifiées avant toute requête ; les
 options réservées aux logiciels échouent sur un module au lieu d'être ignorées

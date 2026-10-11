@@ -748,6 +748,7 @@ php artisan aps-connect:init --create --type=module --parent-software-id=7 --nam
 | `--parent-software-id=` | Parent software of a new module (`--create --type=module`). Picked among your softwares that offer modules when omitted. |
 | `--name=` / `--tagline=` | For `--create`, 255 characters max. The name (required) defaults to `package.json`'s, else the directory name; the tagline is optional. |
 | `--license-type=` | For `--create --type=software`: `free`, `freemium` (default), `paid`, `open_source` or `subscription`. |
+| `--has-modules` | For `--create --type=software`: the software offers modules. Asked when interactive; off otherwise. |
 | `--force-link` | Re-link even if it is already linked to another repository. |
 | `--yes` | Overwrite an existing `appstation.conf.json` without asking. |
 
@@ -755,10 +756,10 @@ It authenticates with the **publisher session**: `APS_TOKEN` together with
 `APPSTATION_BASE_URL`, else the session stored on this machine by
 [`aps-connect:login`](#logging-in-aps-connectlogin--aps-connectlogout) or `aps login`.
 
-A module's parent must offer modules ("has modules" on App Station). That
-setting can only be turned on in App Station's web interface — its API, used
-here and by `aps init`, cannot set it — so a software created from the command
-line has none until you enable it there.
+A module's parent must offer modules ("has modules" on App Station). Set it when
+creating the software (`--has-modules`, or answer the prompt), or later from the
+software's repository with
+[`aps-connect:update --has-modules`](#updating-the-listing-aps-connectupdate).
 
 With `--env=production`, the key is written right away but only becomes active
 on Registra once the software/module is submitted for review — the command
@@ -860,6 +861,7 @@ uses the same publisher session as [`aps-connect:init`](#linking-a-project-aps-c
 | `--price-per-day=` / `--lifetime-price=` | Prices in XOF, integers ≥ 0 (**software only**). |
 | `--trial-period-days=` | Enable the free trial, 1 to 365 days (**software only**). |
 | `--disable-trial` | Disable the free trial (**software only**). |
+| `--has-modules` / `--no-modules` | Whether the software offers modules — required to parent any module (**software only**). |
 
 The limits are App Station's own, checked before any request; software-only
 options fail on a module instead of being silently ignored.
