@@ -796,9 +796,12 @@ combined with `--pack`, the file `--pack` just produced is used — the
 `<file>` argument is only read when `--publish` runs without `--pack`.
 
 Authentication is a **publisher session token**, not the runtime Registra
-API key — pass `--token`, set the `APS_TOKEN` environment variable, or run
-`aps login` (`aps-cli`) and export the token it prints (interactively, it's
-also prompted for as a hidden `secret()` input). There is no browser login
+API key. It is resolved in the same order as `aps-cli`: `--token`, then the
+`APS_TOKEN` environment variable (sent to `APPSTATION_BASE_URL` when set),
+then the session `aps login` (`aps-cli`) stored on this machine — sent to the
+App Station instance you logged into — and finally, interactively, a hidden
+`secret()` prompt. Tokens without a base url of their own target
+`appstation.baseUrl` from `appstation.conf.json`. There is no browser login
 flow here; that stays in `aps-cli`, since it's a one-off per machine, not
 something worth reimplementing in PHP.
 

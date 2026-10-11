@@ -830,10 +830,13 @@ produire qui est utilisé — l'argument `<file>` n'est lu que quand
 `--publish` tourne sans `--pack`.
 
 L'authentification utilise un **token de session éditeur**, pas la clé API
-Registra runtime — passez `--token`, définissez la variable d'environnement
-`APS_TOKEN`, ou lancez `aps login` (`aps-cli`) et exportez le token qu'il
-affiche (en mode interactif, il est aussi demandé via un prompt masqué
-`secret()`). Il n'y a pas de flow de connexion navigateur ici ; ça reste
+Registra runtime. Il est résolu dans le même ordre que `aps-cli` : `--token`,
+puis la variable d'environnement `APS_TOKEN` (envoyée vers
+`APPSTATION_BASE_URL` si elle est définie), puis la session `aps login`
+(`aps-cli`) enregistrée sur la machine — envoyée vers l'instance App Station
+sur laquelle vous vous êtes connecté — et enfin, en mode interactif, un prompt
+masqué `secret()`. Un token sans URL propre cible `appstation.baseUrl` de
+`appstation.conf.json`. Il n'y a pas de flow de connexion navigateur ici ; ça reste
 dans `aps-cli`, puisque c'est une action ponctuelle par machine, pas
 quelque chose qui vaut la peine d'être réimplémenté en PHP.
 

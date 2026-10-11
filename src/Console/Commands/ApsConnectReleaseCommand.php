@@ -14,6 +14,7 @@ use Neocode\ApsConnect\Exceptions\MissingCredentialsException;
 use Neocode\ApsConnect\Exceptions\PublisherRequestException;
 use Neocode\ApsConnect\Exceptions\PublisherValidationException;
 use Neocode\ApsConnect\Http\PublisherClient;
+use Neocode\ApsConnect\Support\ApsCliSession;
 use Neocode\ApsConnect\Support\ProjectConfigReader;
 use Neocode\ApsConnect\Support\ReleaseArchiveBuilder;
 use RuntimeException;
@@ -73,7 +74,7 @@ class ApsConnectReleaseCommand extends Command
     /**
      * Execute the console command.
      */
-    public function handle(ProjectConfigReader $configReader, ReleaseArchiveBuilder $builder, HttpFactory $http): int
+    public function handle(ProjectConfigReader $configReader, ReleaseArchiveBuilder $builder, HttpFactory $http, ApsCliSession $session): int
     {
         [$pack, $publish] = $this->resolveModes();
 
@@ -93,7 +94,7 @@ class ApsConnectReleaseCommand extends Command
             return self::SUCCESS;
         }
 
-        return $this->publish($configReader, $http, $file);
+        return $this->publish($configReader, $http, $session, $file);
     }
 
     /**
@@ -160,7 +161,7 @@ class ApsConnectReleaseCommand extends Command
         return $zipPath;
     }
 
-    private function publish(ProjectConfigReader $configReader, HttpFactory $http, ?string $file): int
+    private function publish(ProjectConfigReader $configReader, HttpFactory $http, ApsCliSession $session, ?string $file): int
     {
         $file ??= $this->askUntilValid(
             'Fichier à publier (chemin)',
@@ -208,7 +209,6 @@ class ApsConnectReleaseCommand extends Command
 
         try {
             $identity = $configReader->projectIdentity();
-            $baseUrl = $configReader->appStationBaseUrl();
         } catch (MissingCredentialsException $e) {
             $this->components->error("Configuration incomplète : {$e->getMessage()}");
 
@@ -224,11 +224,15 @@ class ApsConnectReleaseCommand extends Command
             return self::FAILURE;
         }
 
-        $token = $this->stringOption('token')
-            ?? (getenv('APS_TOKEN') ?: null)
-            ?? $this->secretIfInteractive('Token éditeur (APS_TOKEN)');
+        try {
+            $credentials = $this->resolvePublisherCredentials($configReader, $session);
+        } catch (MissingCredentialsException $e) {
+            $this->components->error("Configuration incomplète : {$e->getMessage()}");
 
-        if ($token === null) {
+            return self::FAILURE;
+        }
+
+        if ($credentials === null) {
             $this->components->error('Aucun token éditeur : passez --token, définissez APS_TOKEN, ou exécutez "aps login" (aps-cli).');
 
             return self::FAILURE;
@@ -246,7 +250,7 @@ class ApsConnectReleaseCommand extends Command
             'max_software_version' => $maxSoftwareVersion,
         ], static fn (?string $value): bool => $value !== null);
 
-        $client = new PublisherClient(new PublisherCredentials($token, $baseUrl), $http);
+        $client = new PublisherClient($credentials, $http);
 
         $this->components->info("Publication de la release {$version} ({$channel}, {$platform})...");
 
@@ -286,6 +290,45 @@ class ApsConnectReleaseCommand extends Command
         $this->line('  Signature : '.($release->signature ?? '(en attente)'));
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Same precedence as aps-cli's resolveSession(): an explicit --token, then
+     * APS_TOKEN (paired with APPSTATION_BASE_URL when set), then the session
+     * `aps login` stored on disk — which carries its own base url, so a token
+     * from `aps login --dev` is never sent to the production instance — and
+     * only then an interactive prompt. Tokens that don't come with a base url
+     * of their own target the project's `appstation.baseUrl`.
+     *
+     * @throws MissingCredentialsException
+     */
+    private function resolvePublisherCredentials(ProjectConfigReader $configReader, ApsCliSession $session): ?PublisherCredentials
+    {
+        $token = $this->stringOption('token');
+
+        if ($token !== null) {
+            return new PublisherCredentials($token, $configReader->appStationBaseUrl());
+        }
+
+        $envToken = trim((string) getenv('APS_TOKEN'));
+
+        if ($envToken !== '') {
+            $envBaseUrl = trim((string) getenv('APPSTATION_BASE_URL'));
+
+            return new PublisherCredentials($envToken, $envBaseUrl !== '' ? rtrim($envBaseUrl, '/') : $configReader->appStationBaseUrl());
+        }
+
+        $stored = $session->credentials();
+
+        if ($stored !== null) {
+            $this->components->info("Session aps login utilisée ({$stored->baseUrl}).");
+
+            return $stored;
+        }
+
+        $token = $this->secretIfInteractive('Token éditeur (APS_TOKEN)');
+
+        return $token !== null ? new PublisherCredentials($token, $configReader->appStationBaseUrl()) : null;
     }
 
     private function isValidVersion(string $value): bool
