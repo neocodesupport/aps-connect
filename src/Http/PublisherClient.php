@@ -124,11 +124,11 @@ final class PublisherClient extends ApiClient
     /**
      * @return array<string, mixed>
      */
-    public function createSoftware(string $name, ?string $tagline = null, ?string $licenseType = null): array
+    public function createSoftware(string $name, ?string $tagline = null, ?string $licenseType = null, ?bool $hasModules = null): array
     {
         return $this->handle($this->request()->post(self::DEVELOPER_PREFIX.'softwares', array_filter(
-            ['name' => $name, 'tagline' => $tagline, 'license_type' => $licenseType],
-            static fn (?string $value): bool => $value !== null,
+            ['name' => $name, 'tagline' => $tagline, 'license_type' => $licenseType, 'has_modules' => $hasModules],
+            static fn (string|bool|null $value): bool => $value !== null,
         )));
     }
 

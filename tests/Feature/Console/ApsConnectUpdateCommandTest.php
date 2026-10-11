@@ -116,6 +116,7 @@ it('rejects invalid values before calling App Station', function (array $options
     'negative price' => [['--price-per-day' => '-5'], 'entier positif ou nul'],
     'trial out of range' => [['--trial-period-days' => '400'], 'entre 1 et 365'],
     'contradictory trial' => [['--trial-period-days' => '7', '--disable-trial' => true], 'contradictoires'],
+    'contradictory modules' => [['--has-modules' => true, '--no-modules' => true], 'contradictoires'],
 ]);
 
 it('shows App Station validation errors', function () {
@@ -124,4 +125,14 @@ it('shows App Station validation errors', function () {
     $this->artisan('aps-connect:update', ['--name' => 'Taken'])
         ->expectsOutputToContain('name: Ce nom est déjà pris.')
         ->assertFailed();
+});
+
+it('turns modules on and off for a software', function () {
+    Http::fake(['*' => Http::response(['data' => ['id' => 7, 'name' => 'My App']])]);
+
+    $this->artisan('aps-connect:update', ['--has-modules' => true])->assertSuccessful();
+    $this->artisan('aps-connect:update', ['--no-modules' => true])->assertSuccessful();
+
+    Http::assertSent(fn (Request $request) => $request->data() === ['has_modules' => true]);
+    Http::assertSent(fn (Request $request) => $request->data() === ['has_modules' => false]);
 });
