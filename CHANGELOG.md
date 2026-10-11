@@ -4,6 +4,11 @@
 
 ### Enhancements
 
+- Add `aps-connect:fetch-key`, the PHP counterpart of `aps fetch-key`:
+  re-issues the current environment's Registra key into
+  `appstation.conf.local.json`, or with `--production` switches both project
+  files to production, warning while the software/module isn't submitted yet
+  and when git tracks `appstation.conf.local.json`.
 - Add `aps-connect:login` / `aps-connect:logout`: checks a publisher token
   against App Station and stores it in aps-cli's own `credentials.json`
   (`--token`/`APS_TOKEN`, `--base-url`/`APPSTATION_BASE_URL`, `--dev`), so one

@@ -8,6 +8,7 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Illuminate\Support\ServiceProvider;
 use Neocode\ApsConnect\Console\Commands\ApsConnectDoctorCommand;
+use Neocode\ApsConnect\Console\Commands\ApsConnectFetchKeyCommand;
 use Neocode\ApsConnect\Console\Commands\ApsConnectInitCommand;
 use Neocode\ApsConnect\Console\Commands\ApsConnectInstallCommand;
 use Neocode\ApsConnect\Console\Commands\ApsConnectLoginCommand;
@@ -91,6 +92,7 @@ class ApsConnectServiceProvider extends ServiceProvider
             ApsConnectLoginCommand::class,
             ApsConnectLogoutCommand::class,
             ApsConnectInitCommand::class,
+            ApsConnectFetchKeyCommand::class,
             ApsConnectDoctorCommand::class,
             ApsConnectReleaseCommand::class,
             ApsConnectInstallCommand::class,

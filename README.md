@@ -66,6 +66,7 @@ purpose — see that section for what that involves.
   - [Credential resolution errors](#credential-resolution-errors)
 - [Logging in: `aps-connect:login` / `aps-connect:logout`](#logging-in-aps-connectlogin--aps-connectlogout)
 - [Linking a project: `aps-connect:init`](#linking-a-project-aps-connectinit)
+- [Refreshing keys & going to production: `aps-connect:fetch-key`](#refreshing-keys--going-to-production-aps-connectfetch-key)
 - [The `aps-connect:doctor` command](#the-aps-connectdoctor-command)
 - [Packaging & publishing a release (App Station)](#packaging--publishing-a-release-app-station)
   - [`--pack`](#--pack)
@@ -760,6 +761,34 @@ With `--env=production`, the key is written right away but only becomes active
 on Registra once the software/module is submitted for review — the command
 warns about it while its status is below `pending_review`.
 
+## Refreshing keys & going to production: `aps-connect:fetch-key`
+
+```bash
+php artisan aps-connect:fetch-key                # refresh the current environment's key
+php artisan aps-connect:fetch-key --production   # switch the project to production
+```
+
+The PHP counterpart of `aps fetch-key`, using the same publisher session as
+[`aps-connect:init`](#linking-a-project-aps-connectinit).
+
+**Without `--production`**, it re-issues the Registra key and signing secret of
+the environment `appstation.conf.json` already names — e.g. after a key
+rotation on Registra's side — into `appstation.conf.local.json`.
+`appstation.conf.json` is left untouched.
+
+**With `--production`**, it switches the project to production in one go:
+`appstation.conf.json` **and** `appstation.conf.local.json` both move to
+`production` — never one without the other. The production key is issued right
+away whatever the status, but Registra only knows it once the software/module
+is submitted for review (`pending_review`); until then the command warns about
+it. It also flags an `appstation.conf.local.json` that git tracks anyway
+(committed before `.gitignore` listed it), since its signing secret would then
+be in the repository history.
+
+The point of `--production`: the release that goes through review is built
+with the development key. Fetch the production key, rebuild, and publish that
+build with `aps-connect:release` **before** customers install anything. To go
+back to development afterwards, run `aps-connect:init --env=development`.
 ## The `aps-connect:doctor` command
 
 ```bash
@@ -792,9 +821,8 @@ release that repeats on every version: turning the project into an
 uploadable artifact, and uploading it. It picks up where
 [`aps-connect:init`](#linking-a-project-aps-connectinit) (or `aps init`) leaves
 off, reading the `appstation.conf.json` it wrote. Signing a repo-linkage
-manifest and rotating keys stay in the
-[`aps` CLI](https://www.npmjs.com/package/@app-station/cli) (`aps sign`,
-`aps fetch-key`, ...).
+manifest stays in the
+[`aps` CLI](https://www.npmjs.com/package/@app-station/cli) (`aps sign`).
 
 Run with no flags, it asks what to do first (pack and publish, pack only,
 or publish an existing file), then prompts for whatever it still needs —
