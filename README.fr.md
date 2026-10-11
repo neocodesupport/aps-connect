@@ -68,6 +68,7 @@ sur disque et le publie — voir cette section pour ce que ça implique.
   - [Erreurs de résolution des credentials](#erreurs-de-résolution-des-credentials)
 - [Se connecter : `aps-connect:login` / `aps-connect:logout`](#se-connecter--aps-connectlogin--aps-connectlogout)
 - [Lier un projet : `aps-connect:init`](#lier-un-projet--aps-connectinit)
+- [Rafraîchir les clés et passer en production : `aps-connect:fetch-key`](#rafraîchir-les-clés-et-passer-en-production--aps-connectfetch-key)
 - [La commande `aps-connect:doctor`](#la-commande-aps-connectdoctor)
 - [Packaging & publication d'une release (App Station)](#packaging--publication-dune-release-app-station)
   - [`--pack`](#--pack)
@@ -789,6 +790,35 @@ Avec `--env=production`, la clé est écrite tout de suite mais ne devient activ
 côté Registra qu'une fois le logiciel/module soumis à la validation — la
 commande le signale tant que son statut est inférieur à `pending_review`.
 
+## Rafraîchir les clés et passer en production : `aps-connect:fetch-key`
+
+```bash
+php artisan aps-connect:fetch-key                # rafraîchit la clé de l'environnement courant
+php artisan aps-connect:fetch-key --production   # bascule le projet en production
+```
+
+L'équivalent PHP d'`aps fetch-key`, avec la même session éditeur
+qu'[`aps-connect:init`](#lier-un-projet--aps-connectinit).
+
+**Sans `--production`**, il réémet la clé Registra et le signing secret de
+l'environnement déjà inscrit dans `appstation.conf.json` — par exemple après
+une rotation de clé côté Registra — dans `appstation.conf.local.json`.
+`appstation.conf.json` n'est pas modifié.
+
+**Avec `--production`**, il bascule le projet en production en une seule fois :
+`appstation.conf.json` **et** `appstation.conf.local.json` passent tous les
+deux à `production` — jamais l'un sans l'autre. La clé de production est émise
+tout de suite, quel que soit le statut, mais Registra ne la connaît qu'une fois
+le logiciel/module soumis à la validation (`pending_review`) ; d'ici là, la
+commande le signale. Elle signale aussi un `appstation.conf.local.json` suivi
+par git malgré tout (commité avant son ajout au `.gitignore`), puisque son
+signing secret serait alors dans l'historique du dépôt.
+
+L'intérêt de `--production` : la release qui passe la validation est buildée
+avec la clé de développement. Récupérez la clé de production, rebuildez, et
+publiez ce build avec `aps-connect:release` **avant** que des clients
+n'installent quoi que ce soit. Pour revenir en développement ensuite :
+`aps-connect:init --env=development`.
 ## La commande `aps-connect:doctor`
 
 ```bash
@@ -823,9 +853,8 @@ publication d'une release qui se répète à chaque version : transformer le
 projet en artefact publiable, puis le publier. Elle prend le relais là où
 [`aps-connect:init`](#lier-un-projet--aps-connectinit) (ou `aps init`)
 s'arrête, en lisant le `appstation.conf.json` qu'il a écrit. Signer un
-manifeste de liaison et faire tourner les clés restent dans le
-[CLI `aps`](https://www.npmjs.com/package/@app-station/cli) (`aps sign`,
-`aps fetch-key`, ...).
+manifeste de liaison reste dans le
+[CLI `aps`](https://www.npmjs.com/package/@app-station/cli) (`aps sign`).
 
 Lancée sans flag, elle demande d'abord quoi faire (empaqueter et publier,
 empaqueter seulement, ou publier un fichier existant), puis pose une

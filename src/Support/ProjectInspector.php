@@ -41,6 +41,16 @@ final readonly class ProjectInspector
         return hash('sha256', $remote !== '' ? $remote : 'local:'.(realpath($this->basePath) ?: $this->basePath));
     }
 
+    /**
+     * Whether git tracks $file anyway — typically a secret committed before
+     * .gitignore listed it (ignoring never untracks retroactively).
+     * Best-effort: false outside a git repository or without git.
+     */
+    public function isTrackedByGit(string $file): bool
+    {
+        return Process::path($this->basePath)->run(['git', 'ls-files', '--error-unmatch', $file])->successful();
+    }
+
     public function stack(): ?string
     {
         $package = $this->packageJson();

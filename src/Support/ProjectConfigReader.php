@@ -141,6 +141,19 @@ final class ProjectConfigReader
     }
 
     /**
+     * appstation.conf.json as-is (empty when missing or invalid) — for
+     * `aps-connect:fetch-key`, which re-issues credentials for the link it
+     * describes (environment, fingerprint, detected stack) rather than
+     * resolving a single trusted value from it.
+     *
+     * @return array<string, mixed>
+     */
+    public function projectConfig(): array
+    {
+        return $this->readJsonFile($this->basePath.'/appstation.conf.json');
+    }
+
+    /**
      * appstation.conf.json (written by `aps init` / flipped by `aps
      * promote`) is the ONLY source for the environment — it is versioned
      * and controlled by the publisher, unlike APP_ENV or any other ambient

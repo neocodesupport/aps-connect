@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace Neocode\ApsConnect\Console\Commands;
 
-use Closure;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\Factory as HttpFactory;
+use Neocode\ApsConnect\Console\Commands\Concerns\LinksAppStationProject;
 use Neocode\ApsConnect\Console\Commands\Concerns\PromptsMissingOptions;
-use Neocode\ApsConnect\Data\PublisherCredentials;
-use Neocode\ApsConnect\Exceptions\ProjectAlreadyLinkedException;
 use Neocode\ApsConnect\Exceptions\PublisherRequestException;
 use Neocode\ApsConnect\Exceptions\PublisherValidationException;
 use Neocode\ApsConnect\Http\PublisherClient;
@@ -29,6 +27,7 @@ use RuntimeException;
  */
 class ApsConnectInitCommand extends Command
 {
+    use LinksAppStationProject;
     use PromptsMissingOptions;
 
     /**
@@ -173,36 +172,6 @@ class ApsConnectInitCommand extends Command
         return self::SUCCESS;
     }
 
-    /**
-     * aps-cli's resolveSession(): APS_TOKEN (which then needs
-     * APPSTATION_BASE_URL — there is no project config to take it from yet),
-     * else the `aps login` session stored on this machine.
-     */
-    private function resolveSession(ApsCliSession $session): ?PublisherCredentials
-    {
-        $envToken = trim((string) getenv('APS_TOKEN'));
-
-        if ($envToken !== '') {
-            $envBaseUrl = trim((string) getenv('APPSTATION_BASE_URL'));
-
-            if ($envBaseUrl === '') {
-                $this->components->error('APS_TOKEN est défini mais APPSTATION_BASE_URL est manquant.');
-
-                return null;
-            }
-
-            return new PublisherCredentials($envToken, rtrim($envBaseUrl, '/'));
-        }
-
-        $stored = $session->credentials();
-
-        if ($stored === null) {
-            $this->components->error('Vous devez être connecté : exécutez "aps login" (aps-cli), ou définissez APS_TOKEN et APPSTATION_BASE_URL.');
-        }
-
-        return $stored;
-    }
-
     private function resolveMode(): ?string
     {
         if ($this->option('link')) {
@@ -270,36 +239,6 @@ class ApsConnectInitCommand extends Command
             ?? $this->pickId('Module App Station à lier ?', $client->listPackages(), 'Aucun module trouvé sur votre compte. Utilisez --create --type=module.', '--package-id');
 
         return $this->linkWithRetry('module', fn (bool $force) => $client->linkPackage($id, $fingerprint, $force), (bool) $this->option('force-link'));
-    }
-
-    /**
-     * Links, warns about a Registra dev sync error, and on a 409 (already
-     * linked to another repository) offers to force the link.
-     *
-     * @param  Closure(bool): array{data: array<string, mixed>, registra_dev_sync_error: ?string}  $link
-     * @return array<string, mixed>
-     */
-    private function linkWithRetry(string $label, Closure $link, bool $force): array
-    {
-        try {
-            $result = $link($force);
-        } catch (ProjectAlreadyLinkedException $e) {
-            if ($force) {
-                throw $e;
-            }
-
-            if (! $this->input->isInteractive() || ! $this->confirm("Ce {$label} est déjà lié à un autre dépôt local. Forcer la liaison ?", false)) {
-                throw new RuntimeException("Ce {$label} est déjà lié à un autre dépôt local. Relancez avec --force-link pour forcer la liaison.");
-            }
-
-            $result = $link(true);
-        }
-
-        if ($result['registra_dev_sync_error'] !== null) {
-            $this->components->warn("Sync Registra dev : {$result['registra_dev_sync_error']}");
-        }
-
-        return $result['data'];
     }
 
     /**
@@ -389,56 +328,6 @@ class ApsConnectInitCommand extends Command
         }
 
         return $licenseType;
-    }
-
-    /**
-     * Same shape as aps-cli's buildSoftwareConfig()/buildModuleConfig().
-     *
-     * @param  array<string, mixed>  $response
-     * @param  array<string, mixed>  $registra
-     * @return array<string, mixed>
-     */
-    private function buildProjectConfig(string $type, array $response, array $registra, string $appStationBaseUrl, string $fingerprint, ?string $stack, int $id): array
-    {
-        $common = [
-            '$schema' => 'https://appstation.dev/schemas/appstation.conf.v1.json',
-            'version' => 1,
-            'type' => $type,
-            'environment' => $registra['environment'] ?? null,
-        ];
-
-        $tail = [
-            'api' => ['baseUrl' => $registra['baseUrl']],
-            'auth' => ['apiKeySource' => 'env', 'apiKeyEnvVar' => ProjectConfigWriter::API_KEY_ENV_VAR],
-            'integration' => ['detectedStack' => $stack],
-        ];
-
-        if ($type === 'module') {
-            $module = is_array($response['module'] ?? null) ? $response['module'] : [];
-            $parent = is_array($response['parentSoftware'] ?? null) ? $response['parentSoftware'] : [];
-
-            return [
-                ...$common,
-                'module' => ['token' => $module['token'] ?? null, 'slug' => $module['slug'] ?? null, 'name' => $module['name'] ?? null],
-                'parentSoftware' => ['token' => $parent['token'] ?? null, 'name' => $parent['name'] ?? null],
-                ...$tail,
-                'appstation' => [
-                    'baseUrl' => $appStationBaseUrl,
-                    'packageId' => $id,
-                    'parentSoftwareId' => $parent['id'] ?? null,
-                    'projectFingerprint' => $fingerprint,
-                ],
-            ];
-        }
-
-        $software = is_array($response['software'] ?? null) ? $response['software'] : [];
-
-        return [
-            ...$common,
-            'software' => ['token' => $software['token'] ?? null, 'name' => $software['name'] ?? null],
-            ...$tail,
-            'appstation' => ['baseUrl' => $appStationBaseUrl, 'softwareId' => $id, 'projectFingerprint' => $fingerprint],
-        ];
     }
 
     private function printNextSteps(string $environment, string $status): void
