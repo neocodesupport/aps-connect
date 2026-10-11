@@ -56,7 +56,7 @@ it('prompts for the app url and db connection interactively when neither is give
     Event::fake();
 
     $this->artisan('aps-connect:install')
-        ->expectsQuestion('APP_URL (ex. https://mon-logiciel.exemple.com)', 'https://interactive.test')
+        ->expectsQuestion('APP_URL', 'https://interactive.test')
         ->expectsChoice('Connexion base de données', 'sqlite', ['sqlite', 'mysql', 'pgsql'])
         ->assertSuccessful();
 

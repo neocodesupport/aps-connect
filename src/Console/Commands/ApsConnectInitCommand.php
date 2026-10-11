@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 use Illuminate\Http\Client\Factory as HttpFactory;
 use Neocode\ApsConnect\Console\Commands\Concerns\LinksAppStationProject;
 use Neocode\ApsConnect\Console\Commands\Concerns\PromptsMissingOptions;
+use Neocode\ApsConnect\Console\InitWizard;
 use Neocode\ApsConnect\Exceptions\PublisherRequestException;
 use Neocode\ApsConnect\Exceptions\PublisherValidationException;
 use Neocode\ApsConnect\Http\PublisherClient;
@@ -24,6 +25,9 @@ use RuntimeException;
  * same files, in the same layout, so either tool can pick up where the
  * other left off. Authenticates with the publisher session: APS_TOKEN +
  * APPSTATION_BASE_URL, else the `aps login` session on this machine.
+ *
+ * Interactively, every question goes through InitWizard (Ctrl+U goes back
+ * without losing answers); otherwise everything comes from options.
  */
 class ApsConnectInitCommand extends Command
 {
@@ -35,16 +39,6 @@ class ApsConnectInitCommand extends Command
      * not active on Registra yet — see printNextSteps().
      */
     private const array REGISTRA_SUBMITTED_STATUSES = ['pending_review', 'published'];
-
-    /**
-     * App Station's App\Enums\LicenseType values.
-     */
-    private const array LICENSE_TYPES = ['free', 'freemium', 'paid', 'open_source', 'subscription'];
-
-    /**
-     * App Station's `max:255` on a software's/module's name and tagline.
-     */
-    private const int MAX_TEXT_LENGTH = 255;
 
     /**
      * The command signature.
@@ -74,17 +68,18 @@ class ApsConnectInitCommand extends Command
      */
     public function handle(ApsCliSession $session, ProjectConfigWriter $writer, ProjectInspector $inspector, HttpFactory $http): int
     {
-        $type = $this->stringOption('type') ?? $this->choiceString('Ce projet est-il un software ou un module ?', ['software', 'module'], 'software');
         $environment = $this->stringOption('env') ?? 'development';
 
-        if (! in_array($type, ['software', 'module'], true)) {
-            $this->components->error("--type invalide : \"{$type}\" (attendu : software, module).");
+        if (! in_array($environment, ['development', 'production'], true)) {
+            $this->components->error("--env invalide : \"{$environment}\" (attendu : development, production).");
 
             return self::FAILURE;
         }
 
-        if (! in_array($environment, ['development', 'production'], true)) {
-            $this->components->error("--env invalide : \"{$environment}\" (attendu : development, production).");
+        try {
+            $presets = $this->presets();
+        } catch (RuntimeException $e) {
+            $this->components->error($e->getMessage());
 
             return self::FAILURE;
         }
@@ -109,23 +104,25 @@ class ApsConnectInitCommand extends Command
             }
         }
 
-        $mode = $this->resolveMode();
-
-        if ($mode === null) {
-            $this->components->error('Précisez --link ou --create.');
-
-            return self::FAILURE;
-        }
-
         $client = new PublisherClient($credentials, $http);
-        $fingerprint = $inspector->fingerprint();
-
-        $this->components->info("aps-connect:init — {$type} / {$mode} / {$environment}");
 
         try {
-            $target = $type === 'module'
-                ? $this->initModule($client, $mode, $fingerprint, $inspector)
-                : $this->initSoftware($client, $mode, $fingerprint, $inspector);
+            $answers = $this->input->isInteractive()
+                ? (new InitWizard(fn () => $client->listSoftwares(), fn () => $client->listPackages()))->run($presets, $inspector->name())
+                : $this->answersFromOptions($presets, $inspector->name());
+
+            if ($answers === null) {
+                $this->components->info('Annulé : rien n\'a été créé.');
+
+                return self::SUCCESS;
+            }
+
+            $type = $answers['type'];
+            $fingerprint = $inspector->fingerprint();
+
+            $this->components->info("aps-connect:init — {$type} / {$answers['mode']} / {$environment}");
+
+            $target = $this->linkOrCreate($client, $answers, $fingerprint);
 
             $response = $this->withSpinner('Récupération de la clé Registra...', fn () => $client->registraInit($type, (int) $target['id'], $environment, $fingerprint));
         } catch (PublisherValidationException $e) {
@@ -173,98 +170,120 @@ class ApsConnectInitCommand extends Command
         return self::SUCCESS;
     }
 
-    private function resolveMode(): ?string
+    /**
+     * What the options already answer, validated.
+     *
+     * @return array{type: ?string, mode: ?string, id: ?int, parent_id: ?int, name: ?string, tagline: ?string, license_type: ?string, has_modules: ?bool}
+     *
+     * @throws RuntimeException on an invalid option
+     */
+    private function presets(): array
     {
-        if ($this->option('link')) {
-            return 'link';
+        $type = $this->stringOption('type');
+
+        if ($type !== null && ! in_array($type, ['software', 'module'], true)) {
+            throw new RuntimeException("--type invalide : \"{$type}\" (attendu : software, module).");
         }
 
-        if ($this->option('create')) {
-            return 'create';
+        $licenseType = $this->stringOption('license-type');
+
+        if ($licenseType !== null && ! in_array($licenseType, InitWizard::LICENSE_TYPES, true)) {
+            throw new RuntimeException("--license-type invalide : \"{$licenseType}\" (attendu : ".implode(', ', InitWizard::LICENSE_TYPES).').');
         }
 
-        if (! $this->input->isInteractive()) {
-            return null;
+        foreach (['name', 'tagline'] as $option) {
+            $value = $this->stringOption($option);
+
+            if ($value !== null && mb_strlen($value) > InitWizard::MAX_TEXT_LENGTH) {
+                throw new RuntimeException("--{$option} ne doit pas dépasser 255 caractères.");
+            }
         }
 
-        $link = 'Lier ce projet à un software/module App Station existant';
-        $create = 'Créer un nouveau software/module sur App Station';
+        $softwareId = $this->positiveIdOption('software-id');
+        $packageId = $this->positiveIdOption('package-id');
 
-        return $this->choiceString('Que souhaitez-vous faire ?', [$link, $create], $link) === $create ? 'create' : 'link';
+        return [
+            'type' => $type,
+            'mode' => match (true) {
+                (bool) $this->option('link') => 'link',
+                (bool) $this->option('create') => 'create',
+                default => null,
+            },
+            // Without --type, an id only says which kind of thing to link.
+            'id' => match ($type) {
+                'module' => $packageId,
+                'software' => $softwareId,
+                default => null,
+            },
+            'parent_id' => $this->positiveIdOption('parent-software-id'),
+            'name' => $this->stringOption('name') !== null ? trim((string) $this->stringOption('name')) : null,
+            'tagline' => $this->stringOption('tagline'),
+            'license_type' => $licenseType,
+            'has_modules' => $this->option('has-modules') ? true : null,
+        ];
     }
 
     /**
-     * @return array<string, mixed>
+     * Non-interactive answers: the options, aps-cli's defaults, and a clear
+     * error for anything that can only be picked interactively.
+     *
+     * @param  array{type: ?string, mode: ?string, id: ?int, parent_id: ?int, name: ?string, tagline: ?string, license_type: ?string, has_modules: ?bool}  $presets
+     * @return array{type: string, mode: string, id: ?int, parent_id: ?int, name: ?string, tagline: ?string, license_type: ?string, has_modules: ?bool}
      */
-    private function initSoftware(PublisherClient $client, string $mode, string $fingerprint, ProjectInspector $inspector): array
+    private function answersFromOptions(array $presets, string $detectedName): array
     {
-        if ($mode === 'create') {
-            $name = $this->resolveName($inspector);
-            $tagline = $this->resolveTagline();
-            $licenseType = $this->resolveLicenseType();
-            $hasModules = $this->resolveHasModules();
+        $type = $presets['type'] ?? 'software';
+        $mode = $presets['mode'] ?? throw new RuntimeException('Précisez --link ou --create.');
+        $id = $presets['id'] ?? ($type === 'module' ? $this->positiveIdOption('package-id') : $this->positiveIdOption('software-id'));
 
-            $software = $this->withSpinner('Création du software sur App Station...', fn () => $client->createSoftware($name, $tagline, $licenseType, $hasModules));
-
-            return $this->linkWithRetry('software', fn (bool $force) => $client->linkSoftware((int) $software['id'], $fingerprint, $force), true);
+        if ($mode === 'link' && $id === null) {
+            throw new RuntimeException('Précisez '.($type === 'module' ? '--package-id' : '--software-id').'.');
         }
 
-        $id = $this->positiveIdOption('software-id')
-            ?? $this->pickId('Software App Station à lier ?', $this->withSpinner('Chargement de vos softwares App Station...', fn () => $client->listSoftwares()), 'Aucun software trouvé sur votre compte. Utilisez --create.', '--software-id');
+        if ($mode === 'create' && $type === 'module' && $presets['parent_id'] === null) {
+            throw new RuntimeException('Précisez --parent-software-id.');
+        }
 
-        return $this->linkWithRetry('software', fn (bool $force) => $client->linkSoftware($id, $fingerprint, $force), (bool) $this->option('force-link'));
+        return [
+            ...$presets,
+            'type' => $type,
+            'mode' => $mode,
+            'id' => $id,
+            'name' => $presets['name'] ?? $detectedName,
+            'license_type' => $presets['license_type'] ?? 'freemium',
+            'has_modules' => $presets['has_modules'] ?? false,
+        ];
     }
 
     /**
+     * @param  array{type: string, mode: string, id: ?int, parent_id: ?int, name: ?string, tagline: ?string, license_type: ?string, has_modules: ?bool}  $answers
      * @return array<string, mixed>
      */
-    private function initModule(PublisherClient $client, string $mode, string $fingerprint, ProjectInspector $inspector): array
+    private function linkOrCreate(PublisherClient $client, array $answers, string $fingerprint): array
     {
-        if ($mode === 'create') {
-            // Only softwares that offer modules can be a module's parent.
-            $parentId = $this->positiveIdOption('parent-software-id')
-                ?? $this->pickId(
-                    'Software parent du module ?',
-                    array_values(array_filter($this->withSpinner('Chargement de vos softwares App Station...', fn () => $client->listSoftwares()), static fn (array $software): bool => ($software['has_modules'] ?? false) === true)),
-                    'Aucun de vos softwares ne propose de modules. Activez-les sur le software parent — "php artisan aps-connect:update --has-modules" depuis son dépôt, ou « Propose des modules » dans App Station — puis relancez.',
-                    '--parent-software-id',
-                );
+        $isModule = $answers['type'] === 'module';
 
-            $name = $this->resolveName($inspector);
-            $package = $this->withSpinner('Création du module sur App Station...', fn () => $client->createPackage($parentId, $name));
+        if ($answers['mode'] === 'link') {
+            $id = (int) $answers['id'];
+
+            return $isModule
+                ? $this->linkWithRetry('module', fn (bool $force) => $client->linkPackage($id, $fingerprint, $force), (bool) $this->option('force-link'))
+                : $this->linkWithRetry('software', fn (bool $force) => $client->linkSoftware($id, $fingerprint, $force), (bool) $this->option('force-link'));
+        }
+
+        $name = (string) $answers['name'];
+
+        if ($isModule) {
+            $package = $this->withSpinner('Création du module sur App Station...', fn () => $client->createPackage((int) $answers['parent_id'], $name));
 
             return $this->linkWithRetry('module', fn (bool $force) => $client->linkPackage((int) $package['id'], $fingerprint, $force), true);
         }
 
-        $id = $this->positiveIdOption('package-id')
-            ?? $this->pickId('Module App Station à lier ?', $this->withSpinner('Chargement de vos modules App Station...', fn () => $client->listPackages()), 'Aucun module trouvé sur votre compte. Utilisez --create --type=module.', '--package-id');
+        $software = $this->withSpinner('Création du software sur App Station...', fn () => $client->createSoftware(
+            $name, $answers['tagline'], $answers['license_type'], $answers['has_modules'],
+        ));
 
-        return $this->linkWithRetry('module', fn (bool $force) => $client->linkPackage($id, $fingerprint, $force), (bool) $this->option('force-link'));
-    }
-
-    /**
-     * @param  list<array<string, mixed>>  $items
-     */
-    private function pickId(string $question, array $items, string $emptyMessage, string $option): int
-    {
-        if ($items === []) {
-            throw new RuntimeException($emptyMessage);
-        }
-
-        if (! $this->input->isInteractive()) {
-            throw new RuntimeException("Précisez {$option}.");
-        }
-
-        $choices = [];
-
-        foreach ($items as $item) {
-            $parent = is_array($item['software'] ?? null) && is_string($item['software']['name'] ?? null) ? "parent : {$item['software']['name']}, " : '';
-            $choices['#'.$item['id'].' '.$item['name']." ({$parent}{$item['status']})"] = (int) $item['id'];
-        }
-
-        $labels = array_keys($choices);
-
-        return $choices[$this->choiceString($question, $labels, $labels[0])];
+        return $this->linkWithRetry('software', fn (bool $force) => $client->linkSoftware((int) $software['id'], $fingerprint, $force), true);
     }
 
     private function positiveIdOption(string $name): ?int
@@ -280,65 +299,6 @@ class ApsConnectInitCommand extends Command
         }
 
         return (int) $value;
-    }
-
-    /**
-     * --name, else the detected name — prompted for (with it as the default)
-     * when interactive, used as-is otherwise.
-     */
-    private function resolveName(ProjectInspector $inspector): string
-    {
-        $name = trim($this->stringOption('name') ?? $this->askWithDefault('Nom du software/module', $inspector->name()));
-
-        if ($name === '' || mb_strlen($name) > self::MAX_TEXT_LENGTH) {
-            throw new RuntimeException('Le nom est obligatoire et ne doit pas dépasser 255 caractères.');
-        }
-
-        return $name;
-    }
-
-    /**
-     * Optional on App Station; asked (empty skips it) when interactive.
-     */
-    private function resolveTagline(): ?string
-    {
-        $tagline = $this->stringOption('tagline');
-
-        $tagline ??= $this->askOptional('Tagline', 'Optionnelle, 255 caractères max — laissez vide pour passer.');
-
-        if ($tagline !== null && mb_strlen($tagline) > self::MAX_TEXT_LENGTH) {
-            throw new RuntimeException('La tagline ne doit pas dépasser 255 caractères.');
-        }
-
-        return $tagline;
-    }
-
-    /**
-     * Whether the new software offers modules (App Station's `has_modules`,
-     * false by default) — required for any module to use it as parent.
-     */
-    private function resolveHasModules(): bool
-    {
-        if ($this->option('has-modules')) {
-            return true;
-        }
-
-        return $this->confirmIfInteractive('Ce software propose-t-il des modules ?', hint: 'Optionnels, vendus ou activés séparément — requis pour créer des modules rattachés.');
-    }
-
-    /**
-     * App Station's LicenseType; it defaults to freemium when omitted.
-     */
-    private function resolveLicenseType(): string
-    {
-        $licenseType = $this->stringOption('license-type')
-            ?? $this->choiceString('Type de licence', self::LICENSE_TYPES, 'freemium');
-
-        if (! in_array($licenseType, self::LICENSE_TYPES, true)) {
-            throw new RuntimeException("--license-type invalide : \"{$licenseType}\" (attendu : ".implode(', ', self::LICENSE_TYPES).').');
-        }
-
-        return $licenseType;
     }
 
     private function printNextSteps(string $environment, string $status): void

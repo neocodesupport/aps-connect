@@ -19,6 +19,11 @@ use Neocode\ApsConnect\Support\ProjectConfigReader;
 use Neocode\ApsConnect\Support\ReleaseArchiveBuilder;
 use RuntimeException;
 
+use function Laravel\Prompts\confirm;
+use function Laravel\Prompts\form;
+use function Laravel\Prompts\select;
+use function Laravel\Prompts\text;
+
 /**
  * Single entry point for both halves of shipping a release: `--pack` builds
  * the archive, `--publish` uploads a file, and either can be combined with
@@ -208,10 +213,24 @@ class ApsConnectReleaseCommand extends Command
 
     private function publish(ProjectConfigReader $configReader, HttpFactory $http, ApsCliSession $session, ?string $file): int
     {
-        $file ??= $this->askUntilValid(
-            'Fichier à publier (chemin)',
-            fn (string $value): bool|string => is_file($value) ? true : "Fichier introuvable : {$value}",
-        );
+        $channel = $this->stringOption('channel');
+        $platform = $this->stringOption('platform');
+        $version = $this->stringOption('release-version');
+
+        if ($this->input->isInteractive()) {
+            $answers = $this->askPublishForm($configReader, $file, $channel, $platform, $version);
+
+            if ($answers === null) {
+                $this->components->info('Publication annulée.');
+
+                return self::SUCCESS;
+            }
+
+            [$file, $channel, $platform, $version] = $answers;
+        }
+
+        $channel ??= 'stable';
+        $platform ??= 'universal';
 
         if ($file === null || ! is_file($file)) {
             $this->components->error('Fichier introuvable'.($file !== null ? " : {$file}" : ' : aucun fichier fourni.'));
@@ -219,26 +238,17 @@ class ApsConnectReleaseCommand extends Command
             return self::FAILURE;
         }
 
-        $channel = $this->stringOption('channel') ?? $this->choiceString('Channel', self::CHANNELS, 'stable');
-
         if (! in_array($channel, self::CHANNELS, true)) {
             $this->components->error('--channel invalide : "'.$channel.'" (attendu : '.implode(', ', self::CHANNELS).').');
 
             return self::FAILURE;
         }
 
-        $platform = $this->stringOption('platform') ?? $this->choiceString('Plateforme', self::PLATFORMS, 'universal');
-
         if (! in_array($platform, self::PLATFORMS, true)) {
             $this->components->error('--platform invalide : "'.$platform.'" (attendu : '.implode(', ', self::PLATFORMS).').');
 
             return self::FAILURE;
         }
-
-        $version = $this->stringOption('release-version') ?? $this->askUntilValid(
-            'Version (semver, ex. 1.4.0)',
-            fn (string $value): bool|string => $this->isValidVersion($value) ? true : "Version invalide (semver, max 20 caractères) : {$value}",
-        );
 
         if ($version === null) {
             $this->components->error('--release-version est requis (ex. 1.4.0).');
@@ -375,6 +385,76 @@ class ApsConnectReleaseCommand extends Command
         $token = $this->secretIfInteractive('Token éditeur (APS_TOKEN)');
 
         return $token !== null ? new PublisherCredentials($token, $configReader->appStationBaseUrl()) : null;
+    }
+
+    /**
+     * The publish questions not already answered by options, as one Laravel
+     * Prompts form ending on a recap: Ctrl+U goes back to any of them, with
+     * its previous answer kept, until the upload is confirmed.
+     *
+     * @return array{string, string, string, string}|null null when the recap is declined
+     */
+    private function askPublishForm(ProjectConfigReader $configReader, ?string $file, ?string $channel, ?string $platform, ?string $version): ?array
+    {
+        $hint = 'Ctrl+U pour revenir à la question précédente.';
+
+        $responses = form()
+            ->addIf($file === null, fn (array $r, mixed $previous) => text(
+                label: 'Fichier à publier (chemin)',
+                default: is_string($previous) ? $previous : '',
+                required: 'Le fichier est obligatoire.',
+                validate: static fn (string $value): ?string => is_file($value) ? null : "Fichier introuvable : {$value}",
+            ), name: 'file')
+            ->addIf($channel === null, fn (array $r, mixed $previous) => select(
+                label: 'Channel',
+                options: self::CHANNELS,
+                default: is_string($previous) ? $previous : 'stable',
+                hint: $hint,
+            ), name: 'channel')
+            ->addIf($platform === null, fn (array $r, mixed $previous) => select(
+                label: 'Plateforme',
+                options: self::PLATFORMS,
+                default: is_string($previous) ? $previous : 'universal',
+                scroll: 9,
+                hint: $hint,
+            ), name: 'platform')
+            ->addIf($version === null, fn (array $r, mixed $previous) => text(
+                label: 'Version (semver, ex. 1.4.0)',
+                default: is_string($previous) ? $previous : '',
+                required: 'La version est obligatoire.',
+                validate: fn (string $value): ?string => $this->isValidVersion($value) ? null : "Version invalide (semver, max 20 caractères) : {$value}",
+                hint: $hint,
+            ), name: 'version')
+            ->add(function (array $r) use ($configReader, $file, $channel, $platform, $version, $hint) {
+                $name = rescue(fn () => $configReader->projectIdentity()->name, 'ce projet', report: false);
+
+                return confirm(
+                    label: sprintf(
+                        'Publier « %s » pour %s en version %s (%s, %s) ?',
+                        basename((string) ($file ?? $r['file'])),
+                        $name,
+                        $version ?? $r['version'],
+                        $channel ?? $r['channel'],
+                        $platform ?? $r['platform'],
+                    ),
+                    default: true,
+                    yes: 'Publier',
+                    no: 'Annuler',
+                    hint: $hint,
+                );
+            }, name: 'confirmed')
+            ->submit();
+
+        if ($responses['confirmed'] !== true) {
+            return null;
+        }
+
+        return [
+            (string) ($file ?? $responses['file']),
+            (string) ($channel ?? $responses['channel']),
+            (string) ($platform ?? $responses['platform']),
+            (string) ($version ?? $responses['version']),
+        ];
     }
 
     private function isValidVersion(string $value): bool

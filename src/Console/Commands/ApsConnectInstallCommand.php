@@ -12,6 +12,11 @@ use Neocode\ApsConnect\Events\ApsConnectInstalled;
 use Neocode\ApsConnect\Events\ApsConnectInstalling;
 use Neocode\ApsConnect\Support\EnvironmentFileInstaller;
 
+use function Laravel\Prompts\form;
+use function Laravel\Prompts\password;
+use function Laravel\Prompts\select;
+use function Laravel\Prompts\text;
+
 /**
  * Run once by the customer after extracting an `aps-connect:release --pack`
  * zip: `.env*` is deliberately excluded from that zip (see
@@ -85,33 +90,86 @@ class ApsConnectInstallCommand extends Command
     {
         $env->createFromExample();
 
-        $appUrl = $this->stringOption('app-url') ?? $this->askWithDefault(
-            'APP_URL (ex. https://mon-logiciel.exemple.com)',
-            'http://localhost',
-        );
+        $values = $this->environmentValues();
 
-        $connection = $this->stringOption('db-connection') ?? $this->choiceString(
-            'Connexion base de données',
-            self::DB_CONNECTIONS,
-            'sqlite',
-        );
-
-        $values = ['APP_URL' => $appUrl, 'DB_CONNECTION' => $connection];
-
-        if ($connection === 'sqlite') {
+        if ($values['DB_CONNECTION'] === 'sqlite') {
             $env->setValues($values);
             $env->ensureSqliteFileExists();
 
             return;
         }
 
-        $values['DB_HOST'] = $this->stringOption('db-host') ?? $this->askWithDefault('DB_HOST', '127.0.0.1');
-        $values['DB_PORT'] = $this->stringOption('db-port') ?? $this->askWithDefault('DB_PORT', self::DEFAULT_DB_PORTS[$connection]);
-        $values['DB_DATABASE'] = $this->stringOption('db-database') ?? $this->askWithDefault('DB_DATABASE', '');
-        $values['DB_USERNAME'] = $this->stringOption('db-username') ?? $this->askWithDefault('DB_USERNAME', '');
-        $values['DB_PASSWORD'] = $this->stringOption('db-password') ?? $this->secretIfInteractive('DB_PASSWORD') ?? '';
-
         $env->setValues($values);
+    }
+
+    /**
+     * The .env values: options first; the rest asked as one Laravel Prompts
+     * form (Ctrl+U goes back, keeping answers) when interactive, defaults
+     * otherwise. Database details are only asked for mysql/pgsql.
+     *
+     * @return array<string, string>
+     */
+    private function environmentValues(): array
+    {
+        $options = [
+            'APP_URL' => $this->stringOption('app-url'),
+            'DB_CONNECTION' => $this->stringOption('db-connection'),
+            'DB_HOST' => $this->stringOption('db-host'),
+            'DB_PORT' => $this->stringOption('db-port'),
+            'DB_DATABASE' => $this->stringOption('db-database'),
+            'DB_USERNAME' => $this->stringOption('db-username'),
+            'DB_PASSWORD' => $this->stringOption('db-password'),
+        ];
+
+        $connection = static fn (array $r): string => $options['DB_CONNECTION'] ?? $r['DB_CONNECTION'] ?? 'sqlite';
+        $needsServer = static fn (array $r): bool => $connection($r) !== 'sqlite';
+        $hint = 'Ctrl+U pour revenir à la question précédente.';
+
+        $answers = ! $this->input->isInteractive() ? [] : form()
+            ->addIf($options['APP_URL'] === null, fn (array $r, mixed $previous) => text(
+                label: 'APP_URL',
+                placeholder: 'https://mon-logiciel.exemple.com',
+                default: is_string($previous) ? $previous : 'http://localhost',
+            ), name: 'APP_URL')
+            ->addIf($options['DB_CONNECTION'] === null, fn (array $r, mixed $previous) => select(
+                label: 'Connexion base de données',
+                options: self::DB_CONNECTIONS,
+                default: is_string($previous) ? $previous : 'sqlite',
+                hint: $hint,
+            ), name: 'DB_CONNECTION')
+            ->addIf(fn (array $r) => $needsServer($r) && $options['DB_HOST'] === null, fn (array $r, mixed $previous) => text(
+                label: 'DB_HOST', default: is_string($previous) ? $previous : '127.0.0.1', hint: $hint,
+            ), name: 'DB_HOST')
+            ->addIf(fn (array $r) => $needsServer($r) && $options['DB_PORT'] === null, fn (array $r, mixed $previous) => text(
+                label: 'DB_PORT', default: is_string($previous) ? $previous : (self::DEFAULT_DB_PORTS[$connection($r)] ?? ''), hint: $hint,
+            ), name: 'DB_PORT')
+            ->addIf(fn (array $r) => $needsServer($r) && $options['DB_DATABASE'] === null, fn (array $r, mixed $previous) => text(
+                label: 'DB_DATABASE', default: is_string($previous) ? $previous : '', hint: $hint,
+            ), name: 'DB_DATABASE')
+            ->addIf(fn (array $r) => $needsServer($r) && $options['DB_USERNAME'] === null, fn (array $r, mixed $previous) => text(
+                label: 'DB_USERNAME', default: is_string($previous) ? $previous : '', hint: $hint,
+            ), name: 'DB_USERNAME')
+            ->addIf(fn (array $r) => $needsServer($r) && $options['DB_PASSWORD'] === null, fn () => password(
+                label: 'DB_PASSWORD', hint: $hint,
+            ), name: 'DB_PASSWORD')
+            ->submit();
+
+        $value = static fn (string $key, string $default): string => $options[$key] ?? (is_string($answers[$key] ?? null) && $answers[$key] !== '' ? $answers[$key] : $default);
+
+        $values = ['APP_URL' => $value('APP_URL', 'http://localhost'), 'DB_CONNECTION' => $value('DB_CONNECTION', 'sqlite')];
+
+        if ($values['DB_CONNECTION'] === 'sqlite') {
+            return $values;
+        }
+
+        return [
+            ...$values,
+            'DB_HOST' => $value('DB_HOST', '127.0.0.1'),
+            'DB_PORT' => $value('DB_PORT', self::DEFAULT_DB_PORTS[$values['DB_CONNECTION']] ?? ''),
+            'DB_DATABASE' => $value('DB_DATABASE', ''),
+            'DB_USERNAME' => $value('DB_USERNAME', ''),
+            'DB_PASSWORD' => $options['DB_PASSWORD'] ?? (is_string($answers['DB_PASSWORD'] ?? null) ? $answers['DB_PASSWORD'] : ''),
+        ];
     }
 
     private function finishInstall(): void

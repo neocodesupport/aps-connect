@@ -17,6 +17,11 @@
   confirm, password, with hints) and shows a spinner during App Station
   calls and while packing. `laravel/prompts` moves from `require-dev` to
   `require`. Laravel falls back to plain questions on Windows and in tests.
+- The questions of `aps-connect:init`, `aps-connect:release --publish` and
+  `aps-connect:install` are now single Laravel Prompts forms: Ctrl+U goes
+  back to the previous question without losing the answers already given.
+  `init` (when creating) and `release` end on a recap to confirm; an empty
+  list (nothing to link) sends the user back to "link or create".
 - `aps-connect:init --create` sets whether a new software offers modules
   (`--has-modules`, asked when interactive), and `aps-connect:update` turns it
   on or off (`--has-modules`/`--no-modules`), now that App Station's API

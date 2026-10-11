@@ -752,6 +752,13 @@ php artisan aps-connect:init --create --type=module --parent-software-id=7 --nam
 | `--force-link` | Re-link even if it is already linked to another repository. |
 | `--yes` | Overwrite an existing `appstation.conf.json` without asking. |
 
+Interactively, the questions form a single Laravel Prompts form: **Ctrl+U goes
+back to the previous question, keeping every answer already given**, and
+creating something ends on a recap to confirm. The same applies to
+`aps-connect:release` (file, channel, platform, version, then a recap before the
+upload) and to `aps-connect:install` (APP_URL and database settings). Questions
+already answered by an option are skipped.
+
 It authenticates with the **publisher session**: `APS_TOKEN` together with
 `APPSTATION_BASE_URL`, else the session stored on this machine by
 [`aps-connect:login`](#logging-in-aps-connectlogin--aps-connectlogout) or `aps login`.

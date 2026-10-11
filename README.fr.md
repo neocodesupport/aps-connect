@@ -780,6 +780,13 @@ php artisan aps-connect:init --create --type=module --parent-software-id=7 --nam
 | `--force-link` | Relier même si le logiciel/module est déjà lié à un autre dépôt. |
 | `--yes` | Écraser un `appstation.conf.json` existant sans confirmation. |
 
+En interactif, les questions forment un seul formulaire Laravel Prompts :
+**Ctrl+U revient à la question précédente en conservant toutes les réponses
+déjà données**, et une création se termine par un récapitulatif à confirmer.
+C'est aussi le cas d'`aps-connect:release` (fichier, canal, plateforme,
+version, puis récapitulatif avant l'envoi) et d'`aps-connect:install` (APP_URL
+et base de données). Les questions déjà renseignées par une option sont sautées.
+
 L'authentification utilise la **session éditeur** : `APS_TOKEN` avec
 `APPSTATION_BASE_URL`, sinon la session enregistrée sur la machine par
 [`aps-connect:login`](#se-connecter--aps-connectlogin--aps-connectlogout) ou `aps login`.

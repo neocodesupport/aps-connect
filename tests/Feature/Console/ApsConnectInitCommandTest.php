@@ -303,10 +303,11 @@ it('asks for the name, tagline and license type when creating a software interac
     ]);
 
     $this->artisan('aps-connect:init', ['--type' => 'software', '--create' => true])
-        ->expectsQuestion('Nom du software/module', 'Shop')
+        ->expectsQuestion('Nom du software', 'Shop')
         ->expectsQuestion('Tagline', '')
         ->expectsChoice('Type de licence', 'paid', ['free', 'freemium', 'paid', 'open_source', 'subscription'])
         ->expectsConfirmation('Ce software propose-t-il des modules ?', 'no')
+        ->expectsConfirmation('Créer le software « Shop » (licence paid, sans modules) ?', 'yes')
         ->assertSuccessful();
 
     Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/developer/softwares')
@@ -329,6 +330,7 @@ it('only offers softwares that propose modules as a new module parent', function
 
     $this->artisan('aps-connect:init', ['--type' => 'module', '--create' => true, '--name' => 'Invoices'])
         ->expectsChoice('Software parent du module ?', '#7 My App (published)', ['#7 My App (published)'])
+        ->expectsConfirmation('Créer le module « Invoices » sous « My App » ?', 'yes')
         ->assertSuccessful();
 
     Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/developer/packages') && $request['software_id'] === 7);

@@ -89,6 +89,7 @@ it('publishes directly when --publish is passed with a file and all required opt
         '--platform' => 'universal',
         '--token' => 'a-token',
     ])
+        ->expectsConfirmation('Publier « release.zip » pour My Software en version 1.0.0 (stable, universal) ?', 'yes')
         ->expectsOutputToContain('Release 1.0.0 (universal) publiée (stable).')
         ->assertSuccessful();
 
@@ -144,6 +145,7 @@ it('asks for the file, version, channel, platform and token when publishing inte
         ->expectsChoice('Channel', 'stable', ['stable', 'beta', 'rc', 'nightly'])
         ->expectsChoice('Plateforme', 'universal', ['windows', 'macos', 'linux', 'android', 'ios', 'web', 'cli', 'browser_extension', 'universal'])
         ->expectsQuestion('Version (semver, ex. 1.4.0)', '1.0.0')
+        ->expectsConfirmation('Publier « release.zip » pour My Software en version 1.0.0 (stable, universal) ?', 'yes')
         ->expectsQuestion('Token éditeur (APS_TOKEN)', 'a-token')
         ->expectsOutputToContain('Release 1.0.0')
         ->assertSuccessful();
@@ -292,3 +294,21 @@ it('refuses to pack without an api key or with another environment\'s credential
     'no api key' => [['environment' => 'production', 'signingSecret' => 's'], "n'a pas de clé API"],
     'development credentials' => [['environment' => 'development', 'auth' => ['apiKey' => 'k']], 'contient des identifiants "development", pas "production"'],
 ]);
+
+it('publishes nothing when the recap is declined', function () {
+    Http::fake();
+
+    $this->artisan('aps-connect:release', [
+        'file' => $this->filePath,
+        '--publish' => true,
+        '--release-version' => '1.0.0',
+        '--token' => 'a-token',
+    ])
+        ->expectsChoice('Channel', 'beta', ['stable', 'beta', 'rc', 'nightly'])
+        ->expectsChoice('Plateforme', 'universal', ['windows', 'macos', 'linux', 'android', 'ios', 'web', 'cli', 'browser_extension', 'universal'])
+        ->expectsConfirmation('Publier « release.zip » pour My Software en version 1.0.0 (beta, universal) ?', 'no')
+        ->expectsOutputToContain('Publication annulée.')
+        ->assertSuccessful();
+
+    Http::assertNothingSent();
+});
