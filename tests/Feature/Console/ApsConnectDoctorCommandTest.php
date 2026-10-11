@@ -118,3 +118,79 @@ it('warns when a previous api key is still valid during its grace period', funct
         ->expectsOutputToContain('ancienne clé API est encore acceptée')
         ->assertSuccessful();
 });
+
+function apsConnectDoctorUseDevelopment(string $basePath): void
+{
+    file_put_contents($basePath.'/appstation.conf.json', json_encode([
+        'environment' => 'development',
+        'api' => ['baseUrl' => 'https://registra.neocode.ci/api'],
+        'appstation' => ['baseUrl' => 'https://app-station.neocode.ci'],
+    ]));
+}
+
+function apsConnectDoctorActiveDevLicence(): array
+{
+    return [
+        'success' => true, 'active' => true, 'status_active' => true, 'not_expired' => true, 'reason' => null,
+        'licence_key' => 'DEV42-OK000-42424', 'status' => 'active', 'expires_at' => null, 'remaining_days' => null,
+        'modules' => [], 'message' => 'ok',
+    ];
+}
+
+it('checks a draft development key through the sandbox, tolerating software/me not knowing it yet', function () {
+    apsConnectDoctorUseDevelopment($this->basePath);
+    Http::fake([
+        '*/software/me' => Http::response(['success' => false, 'message' => 'Clé API logiciel invalide.'], 401),
+        '*/sandbox/licences/verify' => Http::response(apsConnectDoctorActiveDevLicence()),
+    ]);
+
+    $this->artisan('aps-connect:doctor')
+        ->expectsOutputToContain('qu\'à la soumission en review')
+        ->expectsOutputToContain('clé API de développement acceptée')
+        ->assertSuccessful();
+
+    Http::assertSent(fn ($request) => str_ends_with($request->url(), '/sandbox/licences/verify')
+        && $request['licence_key'] === 'DEV42-OK000-42424');
+});
+
+it('fails when the sandbox rejects the development key', function () {
+    apsConnectDoctorUseDevelopment($this->basePath);
+    Http::fake([
+        '*/software/me' => Http::response(['success' => false, 'message' => 'Clé API logiciel invalide.'], 401),
+        '*/sandbox/licences/verify' => Http::response(['success' => false, 'message' => 'Clé API logiciel invalide.'], 401),
+    ]);
+
+    $this->artisan('aps-connect:doctor')
+        ->expectsOutputToContain('rejetée par le sandbox Registra')
+        ->assertFailed();
+});
+
+it('fails when the sandbox does not see the software as in development', function () {
+    apsConnectDoctorUseDevelopment($this->basePath);
+    Http::fake([
+        '*/software/me' => Http::response(['success' => false, 'message' => 'Clé API logiciel invalide.'], 401),
+        '*/sandbox/licences/verify' => Http::response(['success' => false, 'message' => 'Licence introuvable.'], 404),
+    ]);
+
+    $this->artisan('aps-connect:doctor')
+        ->expectsOutputToContain('ne reconnaît pas ce software comme étant en développement')
+        ->assertFailed();
+});
+
+it('reports the identity of a development software already on Registra', function () {
+    apsConnectDoctorUseDevelopment($this->basePath);
+    Http::fake([
+        '*/software/me' => Http::response(['success' => true, 'data' => [
+            'token' => 'tok', 'key' => 'KEY', 'name' => 'My Software', 'slug' => 'my-software',
+            'environment' => 'development', 'has_modules' => false, 'has_api_key' => true,
+            'api_key_fingerprint' => 'abc', 'linked_production_token' => null,
+            'has_previous_api_key_grace_period' => false, 'api_key_previous_expires_at' => null,
+        ]]),
+        '*/sandbox/licences/verify' => Http::response(apsConnectDoctorActiveDevLicence()),
+    ]);
+
+    $this->artisan('aps-connect:doctor')
+        ->expectsOutputToContain('Connecté à Registra en tant que "My Software" (environnement : development)')
+        ->doesntExpectOutputToContain('soumission en review')
+        ->assertSuccessful();
+});

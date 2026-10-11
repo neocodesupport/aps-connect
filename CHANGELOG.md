@@ -4,6 +4,13 @@
 
 ### Bug fixes
 
+- `aps-connect:doctor` in development now probes Registra's sandbox with the
+  reserved test key `DEV42-OK000-42424` (expected `active`), which really
+  checks the api key — the old `APS-CONNECT-DOCTOR-PROBE` was rejected by the
+  sandbox before the api key was even looked at, so it "passed" with any key.
+  A 401 from `software/me` is a warning in development: App Station only
+  registers a development software on Registra once it is submitted.
+
 - `aps-connect:release --pack` archives now ship a generated
   `appstation.conf.local.json` holding only `environment` and `auth.apiKey`
   (never `signingSecret`). Previously the file was excluded entirely, so a

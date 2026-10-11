@@ -897,6 +897,25 @@ there is no side-effect-free equivalent to probe with a throwaway value.
 
 Exit code is `0` on success, `1` if the API key is rejected at either step.
 
+**In development** (`"environment": "development"`), step 3 goes through
+Registra's sandbox with the reserved test key `DEV42-OK000-42424`, which must
+come back `active`: the sandbox identifies the api key with App Station, so this
+really checks the key, from the very first draft. An arbitrary key wouldn't —
+the sandbox rejects non-reserved keys before looking at the api key. Step 1 may
+then warn instead of failing: App Station only registers a development
+software on Registra once it is submitted for review, so `me()` answers 401 for
+a draft (or when Registra's development key no longer matches App Station's).
+
+Registra's reserved test keys (never persisted, development software only)
+cover each scenario: `DEV42-OK000-42424` (active), `DEV42-BLOCK-42424`
+(blocked), `DEV42-PEND0-42424` (pending), `DEV42-ADLPS-42424` (activation
+deadline passed), `DEV42-EXPIR-42424` (expired), `DEV42-CINAC-42424` (customer
+inactive) — also in 4×5, 5×5 (`DEV42-…-42424-42424[-42424]`), 4×4
+(`DEV4-OK00-4242-4242`…) and UUID (`deadbeef-0000-4000-8000-00000000000N`)
+formats. Before submission, only `verifyLicence()`, `verifyModuleLicence()` and
+`subscribe()` work in development (they are the sandboxed ones); the other
+Registra calls need the software to be on Registra.
+
 ## Packaging & publishing a release (App Station)
 
 One dev-time command, `aps-connect:release`, covers the part of publishing a

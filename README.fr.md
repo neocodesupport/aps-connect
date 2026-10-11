@@ -930,6 +930,27 @@ effet de bord à sonder avec une valeur jetable.
 Le code de sortie est `0` en cas de succès, `1` si la clé API est rejetée à
 l'une des étapes.
 
+**En développement** (`"environment": "development"`), l'étape 3 passe par le
+sandbox de Registra avec la clé de test réservée `DEV42-OK000-42424`, qui doit
+revenir `active` : le sandbox identifie la clé API auprès d'App Station, donc
+cela vérifie réellement la clé, dès le premier brouillon. Une clé quelconque ne
+le ferait pas — le sandbox rejette les clés non réservées avant de regarder la
+clé API. L'étape 1 peut alors avertir au lieu d'échouer : App Station
+n'enregistre un logiciel de développement sur Registra qu'à sa soumission en
+review, donc `me()` répond 401 pour un brouillon (ou quand la clé de
+développement de Registra ne correspond plus à celle d'App Station).
+
+Les clés de test réservées de Registra (jamais persistées, logiciels de
+développement uniquement) couvrent chaque scénario : `DEV42-OK000-42424`
+(active), `DEV42-BLOCK-42424` (bloquée), `DEV42-PEND0-42424` (en attente),
+`DEV42-ADLPS-42424` (délai d'activation dépassé), `DEV42-EXPIR-42424`
+(expirée), `DEV42-CINAC-42424` (client inactif) — aussi aux formats 4×5, 5×5
+(`DEV42-…-42424-42424[-42424]`), 4×4 (`DEV4-OK00-4242-4242`…) et UUID
+(`deadbeef-0000-4000-8000-00000000000N`). Avant la soumission, seuls
+`verifyLicence()`, `verifyModuleLicence()` et `subscribe()` fonctionnent en
+développement (ce sont eux qui passent par le sandbox) ; les autres appels
+Registra nécessitent que le logiciel soit sur Registra.
+
 ## Packaging & publication d'une release (App Station)
 
 Une commande de développement, `aps-connect:release`, couvre la partie de la
