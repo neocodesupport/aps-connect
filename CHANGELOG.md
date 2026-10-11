@@ -1,6 +1,26 @@
 # Release Notes
 
-## [Unreleased](https://github.com/neocodesupport/aps-connect/compare/v1.0.0...1.x)
+## [Unreleased](https://github.com/neocodesupport/aps-connect/compare/v1.1.0...master)
+
+## [1.1.0](https://github.com/neocodesupport/aps-connect/compare/v1.0.0...v1.1.0) - 2026-10-11
+
+### Enhancements
+
+- Add `aps-connect:release` to build and/or publish a release of the linked
+  software or module: `--pack` builds a zip archive (optional frontend build,
+  optional source obfuscation via comment stripping and safe local variable
+  renaming), `--publish` uploads it to App Station with a semver version,
+  channel, platform and release notes, authenticated by a publisher token
+  (`--token` or `APS_TOKEN`). Prompts for missing options when run interactively.
+- Add `aps-connect:install`, run by the customer after extracting a packed
+  release (which excludes `.env*`): the first run writes `.env` (app URL,
+  database connection) and stops; later runs generate the app key, migrate
+  (`--no-migrate`) and link storage (`--no-storage-link`), which also makes it
+  the update path for a redeployed archive. Dispatches the new
+  `ApsConnectInstalling` / `ApsConnectInstalled` events.
+- Add `PublisherClient` with its own exception hierarchy
+  (`PublisherRequestException`, `InvalidPublisherTokenException`,
+  `PublisherUnavailableException`, `PublisherValidationException`).
 
 ## [1.0.0](https://github.com/neocodesupport/aps-connect/compare/v0.1.0...v1.0.0) - 2026-09-14
 
