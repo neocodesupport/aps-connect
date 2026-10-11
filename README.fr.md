@@ -66,6 +66,7 @@ sur disque et le publie — voir cette section pour ce que ça implique.
   - [Exceptions Registra](#exceptions-registra)
   - [Exceptions App Station](#exceptions-app-station)
   - [Erreurs de résolution des credentials](#erreurs-de-résolution-des-credentials)
+- [Lier un projet : `aps-connect:init`](#lier-un-projet--aps-connectinit)
 - [La commande `aps-connect:doctor`](#la-commande-aps-connectdoctor)
 - [Packaging & publication d'une release (App Station)](#packaging--publication-dune-release-app-station)
   - [`--pack`](#--pack)
@@ -717,6 +718,52 @@ ne peut résoudre ni une clé API ni une URL de base du tout (voir les tableaux
 d'ordre de résolution dans [Configuration](#configuration)). Son message
 indique toujours précisément quelle valeur manque et comment la fournir.
 
+## Lier un projet : `aps-connect:init`
+
+L'équivalent PHP d'`aps init` : lie ce dépôt à un logiciel ou un module App
+Station — existant, ou qu'il crée — puis écrit `appstation.conf.json`,
+`appstation.conf.local.json` et le bloc `.gitignore`, exactement dans le format
+qu'écrit `aps init`. Les deux outils peuvent prendre le relais l'un de l'autre :
+ils calculent la même empreinte de dépôt (sha256 de l'URL du remote `origin`,
+sinon du chemin local), donc App Station voit un seul et même dépôt.
+
+```bash
+# entièrement interactif : lier ou créer, puis choisir dans votre compte
+php artisan aps-connect:init
+
+# lier un logiciel existant (CI)
+php artisan aps-connect:init --link --software-id=7 --no-interaction
+
+# créer un module sous le logiciel #7, avec des identifiants de production
+php artisan aps-connect:init --create --type=module --parent-software-id=7 --name="Invoices" --env=production
+```
+
+| Option | Description |
+|---|---|
+| `--link` / `--create` | Lier un logiciel/module existant, ou en créer un puis le lier. Demandé si absent. |
+| `--type=` | `software` ou `module`. Demandé si absent (en non-interactif : `software`). |
+| `--env=` | `development` (défaut) ou `production` — quelle clé Registra est émise. |
+| `--software-id=` / `--package-id=` | Ce qu'il faut lier (`--link`). Choisi dans votre compte si absent. |
+| `--parent-software-id=` | Logiciel parent d'un nouveau module (`--create --type=module`). Choisi parmi vos logiciels qui proposent des modules si absent. |
+| `--name=` / `--tagline=` | Pour `--create`, 255 caractères max. Le nom (obligatoire) vaut par défaut celui de `package.json`, sinon le nom du dossier ; la tagline est facultative. |
+| `--license-type=` | Pour `--create --type=software` : `free`, `freemium` (défaut), `paid`, `open_source` ou `subscription`. |
+| `--force-link` | Relier même si le logiciel/module est déjà lié à un autre dépôt. |
+| `--yes` | Écraser un `appstation.conf.json` existant sans confirmation. |
+
+L'authentification utilise la **session éditeur** : `APS_TOKEN` avec
+`APPSTATION_BASE_URL`, sinon la session `aps login` (`aps-cli`) enregistrée sur
+la machine. La connexion elle-même reste dans `aps-cli`.
+
+Le parent d'un module doit proposer des modules (« Propose des modules » sur
+App Station). Ce réglage ne s'active que depuis l'interface web d'App Station —
+son API, utilisée ici et par `aps init`, ne permet pas de le définir — donc un
+logiciel créé en ligne de commande n'en propose pas tant que vous ne l'avez pas
+activé là-bas.
+
+Avec `--env=production`, la clé est écrite tout de suite mais ne devient active
+côté Registra qu'une fois le logiciel/module soumis à la validation — la
+commande le signale tant que son statut est inférieur à `pending_review`.
+
 ## La commande `aps-connect:doctor`
 
 ```bash
@@ -748,13 +795,12 @@ l'une des étapes.
 
 Une commande de développement, `aps-connect:release`, couvre la partie de la
 publication d'une release qui se répète à chaque version : transformer le
-projet en artefact publiable, puis le publier. Tout le reste — lier le
-dépôt, s'authentifier, signer un manifeste de liaison, faire tourner les
-clés — reste dans le
+projet en artefact publiable, puis le publier. Elle prend le relais là où
+[`aps-connect:init`](#lier-un-projet--aps-connectinit) (ou `aps init`)
+s'arrête, en lisant le `appstation.conf.json` qu'il a écrit. S'authentifier,
+signer un manifeste de liaison et faire tourner les clés restent dans le
 [CLI `aps`](https://www.npmjs.com/package/@app-station/cli) (`aps login`,
-`aps init`, `aps sign`, `aps fetch-key`, ...) ; cette commande prend le
-relais là où `aps init` s'arrête, en lisant le même `appstation.conf.json`
-qu'il a écrit.
+`aps sign`, `aps fetch-key`, ...).
 
 Lancée sans flag, elle demande d'abord quoi faire (empaqueter et publier,
 empaqueter seulement, ou publier un fichier existant), puis pose une
